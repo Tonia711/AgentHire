@@ -2,7 +2,12 @@
 
 The backend for this repository is Supabase.
 
-Apply the migration in `backend/supabase/migrations/0001_init.sql` to initialize the KiwiContract hackathon schema.
+Apply migrations in order:
+
+1. `backend/supabase/migrations/0001_init.sql`
+2. `backend/supabase/migrations/0002_payments_and_storage.sql`
+
+These initialize the KiwiContract hackathon schema.
 
 This migration creates:
 
@@ -11,6 +16,7 @@ This migration creates:
 - `invoices`: off-chain mirror of on-chain `Invoice.sol` records
 - `attestations`: EAS proof records (identity/agreement/payment)
 - `app_status`: frontend connection status check
+- `payments`: immutable payment log rows per on-chain payment tx
 
 The migration also includes:
 
@@ -19,5 +25,16 @@ The migration also includes:
 - row level security policies scoped to business ownership
 - Web3-friendly metadata (`chain_id`, token symbol, tx hash fields)
 - seed data for local/demo development (Sarah demo flow)
+- private storage bucket `contractor-docs` for contract PDFs / ID docs / signatures
+
+## Storage path convention
+
+Use this object path shape in the `contractor-docs` bucket so RLS works per business:
+
+- `<business_id>/<contractor_id>/<filename>`
+
+Example:
+
+- `10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/agreement.pdf`
 
 If you are wiring the app to a real Supabase project, copy `frontend/.env.local.example` to `frontend/.env.local` and fill in your project URL and anon key.

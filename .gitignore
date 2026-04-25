@@ -10,3 +10,4 @@ frontend/.next
 frontend/.env
 frontend/.env.local
 backups/
+backend/supabase/.temp
