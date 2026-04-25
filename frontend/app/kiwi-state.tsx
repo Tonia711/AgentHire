@@ -1,6 +1,21 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import { useAccount, useWalletClient } from "wagmi";
+import {
+  ADDRESSES,
+  createOnChainInvoice,
+  payContractor as payContractorTx,
+} from "../lib/contracts";
+import { walletClientToSigner } from "../lib/ethers-adapter";
+import { checkMarketHealth } from "../lib/binance-tools";
+import {
+  fetchDemoContractor,
+  insertInvoice,
+  markLatestInvoicePaid,
+  updateContractorStatus,
+  upsertContractor,
+} from "../lib/supabase-queries";
 
 export type ContractorStatus = "INVITED" | "KYC_DONE" | "AGREEMENT_SIGNED" | "ACTIVE";
 export type InvoiceStatus = "DRAFT" | "CREATED_ON_CHAIN" | "PAID";
@@ -26,6 +41,7 @@ export type Invoice = {
   total: number;
   status: InvoiceStatus;
   txHash: string;
+  paymentTxHash?: string;
 };
 
 export type ChatMessage = {
@@ -52,6 +68,9 @@ export type DummyContractorAccount = {
   minPrice: number;
   maxPrice: number;
 };
+
+// Sarah demo wallet — pre-funded by Team 3 in TEAM3_HANDOFF.md
+const SARAH_WALLET = "0x635B5c22889127D976eFeC1160a103f06b5a7Aff";
 
 export const dummyContractorAccounts: DummyContractorAccount[] = [
   {
@@ -213,7 +232,11 @@ type KiwiStateContextValue = {
   taskRequests: TaskRequest[];
   dummyContractors: DummyContractorAccount[];
   walletConnected: boolean;
+  walletAddress: string | undefined;
   chatMessages: ChatMessage[];
+  isPaying: boolean;
+  isCreatingInvoice: boolean;
+  setAttestationUid: (uid: string) => void;
   connectWallet: () => void;
   sendTaskRequest: (input: {
     task: string;
@@ -240,9 +263,13 @@ type KiwiStateContextValue = {
 const KiwiStateContext = createContext<KiwiStateContextValue | null>(null);
 
 export function KiwiStateProvider({ children }: { children: ReactNode }) {
-  const [walletConnected, setWalletConnected] = useState(false);
+  const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
+
   const [contractor, setContractor] = useState<Contractor | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
+  const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
   const [taskRequests, setTaskRequests] = useState<TaskRequest[]>(() => {
     if (typeof window === "undefined") {
       return [];
@@ -267,9 +294,42 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     },
   ]);
 
-  function addAgentMessage(text: string) {
+  const addAgentMessage = useCallback((text: string) => {
     setChatMessages((messages) => [...messages, { author: "agent", text }]);
-  }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDemoContractor().then((row) => {
+      if (cancelled || !row) return;
+      setContractor((prev) =>
+        prev
+          ? prev
+          : {
+              id: row.id,
+              name: row.name,
+              email: row.email,
+              trade: "Electrician",
+              hourlyRate: String(row.hourly_rate),
+              status:
+                row.status === "active"
+                  ? "ACTIVE"
+                  : row.status === "agreement_signed"
+                    ? "AGREEMENT_SIGNED"
+                    : row.status === "kyc_complete"
+                      ? "KYC_DONE"
+                      : "INVITED",
+              walletAddress: row.wallet_address || SARAH_WALLET,
+              civicPassId: row.civic_pass_id || "pending",
+              luminDocument: "Standard contractor agreement",
+              attestationUid: "",
+            },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function storeTaskRequests(nextRequests: TaskRequest[]) {
     setTaskRequests(nextRequests);
@@ -280,8 +340,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }
 
   function connectWallet() {
-    setWalletConnected(true);
-    addAgentMessage("Wallet connected to Avalanche Fuji. Ready for dNZD demo actions.");
+    addAgentMessage("Use the Connect Wallet button to choose a wallet provider on Fuji.");
   }
 
   function sendTaskRequest(input: {
@@ -308,9 +367,10 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       contractorResponses,
     };
 
-    // Local database for now: persist requests in localStorage until Supabase is connected.
     storeTaskRequests([request, ...taskRequests]);
-    addAgentMessage(`Request ${request.id} stored locally and sent to ${matchedContractors.length} matching window cleaning contractor(s).`);
+    addAgentMessage(
+      `Request ${request.id} stored locally and sent to ${matchedContractors.length} matching window cleaning contractor(s).`,
+    );
   }
 
   function respondToTaskRequest(
@@ -341,7 +401,6 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     trade: string;
     hourlyRate: string;
   }) {
-    // Later: insert contractor invite into Supabase and trigger the Edge Function email invite here.
     const invitedContractor: Contractor = {
       id: "sarah-electrician",
       name: input.name,
@@ -349,7 +408,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       trade: input.trade,
       hourlyRate: input.hourlyRate,
       status: "INVITED",
-      walletAddress: "0x7A1f...42d9",
+      walletAddress: SARAH_WALLET,
       civicPassId: "pending",
       luminDocument: "Standard contractor agreement",
       attestationUid: "",
@@ -357,7 +416,17 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
 
     setContractor(invitedContractor);
     setInvoice(null);
-    addAgentMessage(`Done. Sent ${input.name} an invite at ${input.email}. I will let you know when verification is complete.`);
+    void upsertContractor({
+      id: invitedContractor.id,
+      name: invitedContractor.name,
+      email: invitedContractor.email,
+      hourlyRate: Number(invitedContractor.hourlyRate),
+      walletAddress: invitedContractor.walletAddress,
+      status: "invited",
+    });
+    addAgentMessage(
+      `Done. Sent ${input.name} an invite at ${input.email}. I will let you know when verification is complete.`,
+    );
   }
 
   function simulateVerification() {
@@ -365,17 +434,19 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Later: replace this stub with Civic Pass status + Lumin Sign webhook + EAS attestation read.
     setContractor({
       ...contractor,
       status: "AGREEMENT_SIGNED",
       civicPassId: "civic-demo-pass-43113",
       attestationUid: "0x9f3a...eas",
     });
-    addAgentMessage(`${contractor.name} completed Civic KYC and signed via Lumin. EAS attestation recorded on Fuji.`);
+    void updateContractorStatus(contractor.id, "agreement_signed", "civic-demo-pass-43113");
+    addAgentMessage(
+      `${contractor.name} completed Civic KYC and signed via Lumin. EAS attestation recorded on Fuji.`,
+    );
   }
 
-  function createInvoice(hours: string) {
+  async function createInvoice(hours: string) {
     if (!contractor) {
       addAgentMessage("Invite and verify a contractor before creating an invoice.");
       return;
@@ -387,7 +458,33 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     const gst = subtotal * 0.15;
     const total = subtotal + gst;
 
-    // Later: call Invoice.sol createInvoice() with ethers.js once Team 3 shares addresses.
+    setIsCreatingInvoice(true);
+    let txHash = "0xinvoice...fuji-mock";
+
+    try {
+      if (
+        isConnected &&
+        walletClient &&
+        ADDRESSES.INVOICE !== "0x0000000000000000000000000000000000000000"
+      ) {
+        addAgentMessage("Submitting invoice to Invoice.sol on Fuji. Approve in your wallet.");
+        const signer = walletClientToSigner(walletClient);
+        const result = await createOnChainInvoice(
+          signer,
+          contractor.walletAddress,
+          subtotal,
+          gst,
+          `${hours} hours: ${contractor.trade}`,
+        );
+        txHash = result.txHash;
+      }
+    } catch (error) {
+      console.error(error);
+      addAgentMessage(
+        `Invoice transaction failed: ${error instanceof Error ? error.message : "unknown error"}. Falling back to mock invoice.`,
+      );
+    }
+
     setInvoice({
       contractorId: contractor.id,
       hours,
@@ -395,27 +492,79 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       gst,
       total,
       status: "CREATED_ON_CHAIN",
-      txHash: "0xinvoice...fuji",
+      txHash,
     });
-    addAgentMessage(`Invoice created: $${subtotal.toFixed(2)} + $${gst.toFixed(2)} GST = $${total.toFixed(2)} dNZD.`);
+    void insertInvoice({
+      contractorId: contractor.id,
+      amount: subtotal,
+      gstAmount: gst,
+      description: `${hours} hours: ${contractor.trade}`,
+      invoiceTxHash: txHash,
+    });
+    addAgentMessage(
+      `Invoice created: $${subtotal.toFixed(2)} + $${gst.toFixed(2)} GST = $${total.toFixed(2)} dNZD.`,
+    );
+    setIsCreatingInvoice(false);
   }
 
-  function payInvoice() {
+  async function payInvoice() {
     if (!invoice || !contractor) {
       return;
     }
 
-    // Later: run Binance Skills market checks, then transfer MockDNZD on Fuji with ethers.js.
+    setIsPaying(true);
+
+    try {
+      const health = await checkMarketHealth();
+      addAgentMessage(
+        health.status === "healthy"
+          ? "Binance market check: dNZD peg stable, volume healthy. Safe to proceed."
+          : "Binance market check: could not verify. Proceeding with caution.",
+      );
+    } catch {
+      addAgentMessage("Binance market check skipped (network error).");
+    }
+
+    let txHash = "0xpaid...dnzd-mock";
+
+    try {
+      if (
+        isConnected &&
+        walletClient &&
+        ADDRESSES.MOCK_DNZD !== "0x0000000000000000000000000000000000000000"
+      ) {
+        addAgentMessage("Submitting dNZD transfer on Fuji. Approve in your wallet.");
+        const signer = walletClientToSigner(walletClient);
+        const result = await payContractorTx(
+          signer,
+          contractor.walletAddress,
+          invoice.total,
+        );
+        txHash = result.txHash;
+      }
+    } catch (error) {
+      console.error(error);
+      addAgentMessage(
+        `Payment failed: ${error instanceof Error ? error.message : "unknown error"}.`,
+      );
+      setIsPaying(false);
+      return;
+    }
+
     setInvoice({
       ...invoice,
       status: "PAID",
-      txHash: "0xpaid...dnzd",
+      paymentTxHash: txHash,
+      txHash: invoice.txHash,
     });
     setContractor({
       ...contractor,
       status: "ACTIVE",
     });
-    addAgentMessage(`Binance market check passed. Sent ${invoice.total.toFixed(2)} dNZD to ${contractor.name}.`);
+    void markLatestInvoicePaid(contractor.id, txHash);
+    void updateContractorStatus(contractor.id, "active");
+    addAgentMessage(`Sent ${invoice.total.toFixed(2)} dNZD to ${contractor.name}.`);
+    setIsPaying(false);
   }
 
   function sendAgentPrompt(prompt: string) {
@@ -424,12 +573,12 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     const normalized = prompt.toLowerCase();
 
     if (normalized.includes("invoice")) {
-      createInvoice("10");
+      void createInvoice("10");
       return;
     }
 
     if (normalized.includes("pay")) {
-      payInvoice();
+      void payInvoice();
       return;
     }
 
@@ -443,7 +592,16 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    addAgentMessage("I can help track task requests, create invoices, and prepare dNZD payments for the demo.");
+    addAgentMessage(
+      "I can help track task requests, create invoices, and prepare dNZD payments for the demo.",
+    );
+  }
+
+  function setAttestationUid(uid: string) {
+    setContractor((prev) =>
+      prev ? { ...prev, attestationUid: uid, status: "AGREEMENT_SIGNED" } : prev,
+    );
+    addAgentMessage(`EAS attestation anchored on Fuji: ${uid.slice(0, 10)}...`);
   }
 
   return (
@@ -453,8 +611,12 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
         invoice,
         taskRequests,
         dummyContractors: dummyContractorAccounts,
-        walletConnected,
+        walletConnected: isConnected,
+        walletAddress: address,
         chatMessages,
+        isPaying,
+        isCreatingInvoice,
+        setAttestationUid,
         connectWallet,
         sendTaskRequest,
         respondToTaskRequest,

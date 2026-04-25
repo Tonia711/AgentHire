@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { CivicStub } from "../../components/CivicStub";
+import { LuminSignButton } from "../../components/LuminSignButton";
 import { ContractorStatusBadge, WalletPanel } from "../kiwi-components";
 import { useKiwiState } from "../kiwi-state";
 import TempNav from "../temp-nav";
 
 export default function ContractorPage() {
   const {
-    connectWallet,
     contractor,
+    setAttestationUid,
     simulateVerification,
     walletConnected,
   } = useKiwiState();
@@ -34,7 +36,7 @@ export default function ContractorPage() {
 
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:px-10">
         <aside className="space-y-6">
-          <WalletPanel connected={walletConnected} onConnect={connectWallet} />
+          <WalletPanel connected={walletConnected} />
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
             <h2 className="text-2xl font-bold">Invite details</h2>
             {contractor ? (
@@ -61,7 +63,12 @@ export default function ContractorPage() {
                   These are demo stubs that match the plan’s Civic and Lumin potholes.
                 </p>
               </div>
-              {contractor && <ContractorStatusBadge status={contractor.status} />}
+              <div className="flex flex-wrap items-center gap-2">
+                <CivicStub
+                  verified={Boolean(contractor && contractor.civicPassId !== "pending")}
+                />
+                {contractor && <ContractorStatusBadge status={contractor.status} />}
+              </div>
             </div>
             <ol className="mt-5 grid gap-3 text-sm">
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">1. Accept invite from business owner</li>
@@ -69,14 +76,25 @@ export default function ContractorPage() {
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">3. Sign contractor agreement via Lumin Sign web flow</li>
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">4. Anchor document hash with EAS on Fuji</li>
             </ol>
-            <button
-              className="mt-5 rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={!contractor}
-              onClick={simulateVerification}
-              type="button"
-            >
-              Complete KYC + signature demo
-            </button>
+            <div className="mt-5 grid gap-3">
+              {contractor && walletConnected ? (
+                <LuminSignButton
+                  civicPassId={contractor.civicPassId}
+                  contractorAddress={contractor.walletAddress}
+                  contractorId={contractor.id}
+                  documentTitle={contractor.luminDocument}
+                  onAttested={setAttestationUid}
+                />
+              ) : null}
+              <button
+                className="cursor-pointer rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold text-[#17211d] transition-colors duration-200 hover:bg-[#fbfcf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!contractor}
+                onClick={simulateVerification}
+                type="button"
+              >
+                Simulate KYC + signature (offline demo)
+              </button>
+            </div>
           </article>
 
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
