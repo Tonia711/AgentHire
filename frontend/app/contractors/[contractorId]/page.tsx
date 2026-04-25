@@ -35,6 +35,9 @@ export default function DummyContractorPage() {
   const assignedRequests = taskRequests.filter((request) =>
     (request.matchedContractorIds ?? []).includes(contractor.id),
   );
+  const acceptedRequests = assignedRequests.filter(
+    (request) => request.contractorResponses?.[contractor.id] === "ACCEPTED",
+  );
 
   return (
     <main className="min-h-screen bg-[#f7f8f4] text-[#17211d]">
@@ -56,7 +59,7 @@ export default function DummyContractorPage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-5 py-6 sm:px-8 lg:px-10">
+      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1fr_360px] lg:items-start lg:px-10">
         <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-2xl font-bold">Requests sent by AI filter</h2>
@@ -87,9 +90,6 @@ export default function DummyContractorPage() {
                       <div className="mb-4 rounded-md border border-[#b9d8c8] bg-[#e7f2ee] px-3 py-3 text-sm">
                         <p className="font-bold text-[#155b49]">
                           You accepted this request
-                        </p>
-                        <p className="mt-1 text-[#435149]">
-                          The business dashboard now shows {contractor.name} as an accepted contractor for this job.
                         </p>
                         <p className="mt-1 text-[#435149]">
                           A bill was automatically sent to the client for Fuji wallet payment.
@@ -148,6 +148,31 @@ export default function DummyContractorPage() {
                   </article>
                 );
               })
+            )}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-2xl font-bold">Job history</h2>
+            <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
+              {acceptedRequests.length} accepted
+            </span>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {acceptedRequests.length === 0 ? (
+              <p className="text-sm text-[#607066]">
+                Accepted jobs will appear here.
+              </p>
+            ) : (
+              acceptedRequests.map((request) => (
+                <div className="rounded-md border border-[#dde4d8] bg-[#fbfcf8] px-3 py-3 text-sm" key={`history-${request.id}`}>
+                  <p className="font-bold text-[#17211d]">{request.task}</p>
+                  <p className="mt-1 text-[#607066]">
+                    {request.location} | {request.priceRange} | {request.createdAt}
+                  </p>
+                </div>
+              ))
             )}
           </div>
         </article>
