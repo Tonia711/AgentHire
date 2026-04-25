@@ -10,6 +10,7 @@ export type Contractor = {
   name: string;
   email: string;
   trade: string;
+  inviteLink: string;
   hourlyRate: string;
   status: ContractorStatus;
   walletAddress: string;
@@ -240,6 +241,9 @@ type KiwiStateContextValue = {
 const KiwiStateContext = createContext<KiwiStateContextValue | null>(null);
 
 export function KiwiStateProvider({ children }: { children: ReactNode }) {
+  const demoBusinessId =
+    process.env.NEXT_PUBLIC_DEMO_BUSINESS_ID ??
+    "10000000-0000-0000-0000-000000000001";
   const [walletConnected, setWalletConnected] = useState(false);
   const [contractor, setContractor] = useState<Contractor | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -341,23 +345,70 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     trade: string;
     hourlyRate: string;
   }) {
-    // Later: insert contractor invite into Supabase and trigger the Edge Function email invite here.
-    const invitedContractor: Contractor = {
-      id: "sarah-electrician",
-      name: input.name,
-      email: input.email,
-      trade: input.trade,
-      hourlyRate: input.hourlyRate,
-      status: "INVITED",
-      walletAddress: "0x7A1f...42d9",
-      civicPassId: "pending",
-      luminDocument: "Standard contractor agreement",
-      attestationUid: "",
-    };
+    void (async () => {
+      try {
+        const response = await fetch("/api/contractors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businessId: demoBusinessId,
+            name: input.name,
+            email: input.email,
+            hourlyRate: Number(input.hourlyRate),
+            terms: "standard",
+            preferredChainId: 43113,
+            preferredToken: "dNZD",
+          }),
+        });
 
-    setContractor(invitedContractor);
-    setInvoice(null);
-    addAgentMessage(`Done. Sent ${input.name} an invite at ${input.email}. I will let you know when verification is complete.`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Invite request failed");
+        }
+
+        const invitedContractor: Contractor = {
+          id: payload?.contractor?.id ?? "contractor-from-api",
+          name: payload?.contractor?.name ?? input.name,
+          email: payload?.contractor?.email ?? input.email,
+          trade: input.trade,
+          inviteLink:
+            payload?.inviteLink ??
+            `http://localhost:3000/onboard/${payload?.contractor?.invite_token ?? crypto.randomUUID()}`,
+          hourlyRate: String(payload?.contractor?.hourly_rate ?? input.hourlyRate),
+          status: "INVITED",
+          walletAddress: "0x7A1f...42d9",
+          civicPassId: "pending",
+          luminDocument: "Standard contractor agreement",
+          attestationUid: "",
+        };
+
+        setContractor(invitedContractor);
+        setInvoice(null);
+        addAgentMessage(
+          `Done. Invite ready for ${invitedContractor.name}. Share this onboarding link: ${invitedContractor.inviteLink}`,
+        );
+      } catch (error) {
+        const fallbackInviteLink = `http://localhost:3000/onboard/${crypto.randomUUID()}`;
+        const invitedContractor: Contractor = {
+          id: "fallback-contractor",
+          name: input.name,
+          email: input.email,
+          trade: input.trade,
+          inviteLink: fallbackInviteLink,
+          hourlyRate: input.hourlyRate,
+          status: "INVITED",
+          walletAddress: "0x7A1f...42d9",
+          civicPassId: "pending",
+          luminDocument: "Standard contractor agreement",
+          attestationUid: "",
+        };
+        setContractor(invitedContractor);
+        setInvoice(null);
+        addAgentMessage(
+          `Invite API failed (${error instanceof Error ? error.message : "unknown error"}). Using local demo link: ${fallbackInviteLink}`,
+        );
+      }
+    })();
   }
 
   function simulateVerification() {
@@ -434,7 +485,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     }
 
     if (normalized.includes("invite")) {
-      inviteContractor({
+      void inviteContractor({
         name: "Sarah",
         email: "sarah@email.co.nz",
         trade: "Electrician",
