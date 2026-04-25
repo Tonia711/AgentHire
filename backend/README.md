@@ -38,3 +38,17 @@ Example:
 - `10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/agreement.pdf`
 
 If you are wiring the app to a real Supabase project, copy `frontend/.env.local.example` to `frontend/.env.local` and fill in your project URL and anon key.
+
+## One-command sync script
+
+You can sync migrations + deploy edge functions in one command from the repository root:
+
+```bash
+npm run supabase:sync -- mevlpenppzadimcpxvad
+```
+
+The script runs:
+
+- `supabase link --workdir backend --project-ref <project-ref>`
+- `supabase db push --workdir backend`
+- deploys `invite-contractor`, `update-contractor-status`, and `log-payment`

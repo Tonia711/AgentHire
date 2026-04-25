@@ -467,6 +467,51 @@ export function VaultViewer({ contractor }: { contractor: Contractor | null }) {
   );
 }
 
+export function InviteLinkCard({ contractor }: { contractor: Contractor | null }) {
+  const [status, setStatus] = useState("No invite link generated yet.");
+
+  async function copyInviteLink() {
+    if (!contractor?.inviteLink) {
+      setStatus("No invite link available.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(contractor.inviteLink);
+      setStatus("Invite link copied. Share it with the contractor.");
+    } catch {
+      setStatus("Clipboard blocked. Copy the link manually.");
+    }
+  }
+
+  return (
+    <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
+      <h2 className="text-2xl font-bold">Invite link</h2>
+      <p className="mt-2 text-sm text-[#607066]" aria-live="polite">
+        {status}
+      </p>
+      {contractor?.inviteLink ? (
+        <>
+          <p className="mt-3 break-all rounded-md bg-[#fbfcf8] p-3 text-sm">
+            {contractor.inviteLink}
+          </p>
+          <button
+            className="mt-4 rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold"
+            onClick={copyInviteLink}
+            type="button"
+          >
+            Copy invite link
+          </button>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-[#607066]">
+          Ask the AI agent to invite a contractor and the onboarding link will appear here.
+        </p>
+      )}
+    </article>
+  );
+}
+
 function TxLink({ hash }: { hash: string }) {
   if (!hash || hash.startsWith("0xinvoice...") || hash.startsWith("0xpaid...")) {
     return <span className="font-mono text-xs text-[#607066]">{hash || "pending"}</span>;

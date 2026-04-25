@@ -6,7 +6,8 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace frontend",
-    "build": "npm run build --workspace frontend"
+    "build": "npm run build --workspace frontend",
+    "supabase:sync": "bash backend/scripts/supabase_sync.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.104.1"

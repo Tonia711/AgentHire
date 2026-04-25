@@ -5,6 +5,7 @@ import { AIChatLive } from "../../components/AIChatLive";
 import { CivicStub } from "../../components/CivicStub";
 import {
   DummyContractorDashboard,
+  InviteLinkCard,
   InvoicePanel,
   SendTaskRequestBox,
   TaskRequestList,
@@ -87,6 +88,7 @@ export default function ClientPage() {
               Simulate Sarah verification
             </button>
           </article>
+          <InviteLinkCard contractor={contractor} />
           <VaultViewer contractor={contractor} />
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
             <h2 className="text-2xl font-bold">Bounty alignment</h2>
