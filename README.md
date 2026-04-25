@@ -16,7 +16,7 @@ npm install
 cp frontend/.env.local.example frontend/.env.local
 ```
 
-3. Apply the migration in `backend/supabase/migrations/0001_init.sql` to your Supabase project.
+3. Apply the migration in `backend/supabase/migrations/0001_init.sql` to your Supabase project (this creates the KiwiContract hackathon schema and demo seed data).
 
 4. Start the frontend:
 
