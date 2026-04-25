@@ -1,0 +1,8 @@
+[functions.invite-contractor]
+verify_jwt = false
+
+[functions.update-contractor-status]
+verify_jwt = false
+
+[functions.log-payment]
+verify_jwt = false
