@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  AIChatPanel,
   DummyContractorDashboard,
   InvoicePanel,
   SendTaskRequestBox,
@@ -15,14 +14,11 @@ import TempNav from "../temp-nav";
 
 export default function ClientPage() {
   const {
-    chatMessages,
     connectWallet,
     contractor,
-    createInvoice,
     dummyContractors,
-    invoice,
+    invoices,
     payInvoice,
-    sendAgentPrompt,
     sendTaskRequest,
     simulateVerification,
     taskRequests,
@@ -56,10 +52,9 @@ export default function ClientPage() {
             contractors={dummyContractors}
             requests={taskRequests}
           />
-          <AIChatPanel messages={chatMessages} onPrompt={sendAgentPrompt} />
           <InvoicePanel
-            invoice={invoice}
-            onCreateInvoice={createInvoice}
+            contractors={dummyContractors}
+            invoices={invoices}
             onPayInvoice={payInvoice}
           />
         </section>
@@ -81,15 +76,6 @@ export default function ClientPage() {
             </button>
           </article>
           <VaultViewer contractor={contractor} />
-          <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
-            <h2 className="text-2xl font-bold">Bounty alignment</h2>
-            <ul className="mt-4 grid gap-3 text-sm">
-              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">Avalanche Fuji transaction placeholders</li>
-              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">Mock dNZD payment flow</li>
-              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">Civic + Lumin verification stubs</li>
-              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">Binance market check copy before payment</li>
-            </ul>
-          </article>
         </aside>
       </div>
     </main>

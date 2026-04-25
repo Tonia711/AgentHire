@@ -3,17 +3,22 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  ContractorResponse,
   dummyContractorAccounts,
   useKiwiState,
 } from "../../kiwi-state";
 import TempNav from "../../temp-nav";
+
+function getResponseLabel(response: ContractorResponse) {
+  return response === "ACCEPTED_ELSEWHERE" ? "ACCEPTED ELSEWHERE" : response;
+}
 
 export default function DummyContractorPage() {
   const params = useParams<{ contractorId: string }>();
   const contractor = dummyContractorAccounts.find(
     (account) => account.id === params.contractorId,
   );
-  const { respondToTaskRequest, taskRequests } = useKiwiState();
+  const { invoices, respondToTaskRequest, taskRequests } = useKiwiState();
 
   if (!contractor) {
     return (
@@ -42,7 +47,7 @@ export default function DummyContractorPage() {
             </p>
             <h1 className="mt-1 text-3xl font-bold">{contractor.name}</h1>
             <p className="mt-2 text-sm text-[#607066]">
-              {contractor.service} | {contractor.position} | ${contractor.minPrice}-${contractor.maxPrice}
+              {contractor.expertise} | {contractor.position} | ${contractor.hourlyRate}/hr
             </p>
           </div>
           <Link className="rounded-md border border-[#b9c2b2] px-4 py-2 text-sm font-semibold" href="/client">
@@ -68,9 +73,39 @@ export default function DummyContractorPage() {
               assignedRequests.map((request) => {
                 const response = request.contractorResponses?.[contractor.id] ?? "PENDING";
                 const hasResponded = response !== "PENDING";
+                const acceptedByThisContractor = response === "ACCEPTED";
+                const acceptedElsewhere = response === "ACCEPTED_ELSEWHERE";
+                const invoice = invoices.find(
+                  (item) =>
+                    item.requestId === request.id &&
+                    item.contractorId === contractor.id,
+                );
 
                 return (
                   <article className="rounded-lg border border-[#dde4d8] bg-[#fbfcf8] p-4" key={request.id}>
+                    {acceptedByThisContractor && (
+                      <div className="mb-4 rounded-md border border-[#b9d8c8] bg-[#e7f2ee] px-3 py-3 text-sm">
+                        <p className="font-bold text-[#155b49]">
+                          You accepted this request
+                        </p>
+                        <p className="mt-1 text-[#435149]">
+                          The business dashboard now shows {contractor.name} as an accepted contractor for this job.
+                        </p>
+                        <p className="mt-1 text-[#435149]">
+                          A bill was automatically sent to the client for Fuji wallet payment.
+                        </p>
+                      </div>
+                    )}
+                    {acceptedElsewhere && (
+                      <div className="mb-4 rounded-md border border-[#ead8aa] bg-[#fff4d5] px-3 py-3 text-sm">
+                        <p className="font-bold text-[#7a5b00]">
+                          Accepted elsewhere
+                        </p>
+                        <p className="mt-1 text-[#435149]">
+                          Another contractor accepted this request first, so this offer is now closed.
+                        </p>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-bold">{request.task}</h3>
@@ -79,7 +114,7 @@ export default function DummyContractorPage() {
                         </p>
                       </div>
                       <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#155b49]">
-                        {response}
+                        {getResponseLabel(response)}
                       </span>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
@@ -100,6 +135,16 @@ export default function DummyContractorPage() {
                         Reject
                       </button>
                     </div>
+                    {acceptedByThisContractor && invoice?.requestId === request.id && (
+                      <div className="mt-4 rounded-md border border-[#b9d8c8] bg-white p-3 text-sm">
+                        <p className="font-bold text-[#155b49]">
+                          Auto bill sent
+                        </p>
+                        <p className="mt-1 text-[#435149]">
+                          {invoice.hours} hours at ${contractor.hourlyRate}/hr. Total due: ${invoice.total.toFixed(2)} dNZD.
+                        </p>
+                      </div>
+                    )}
                   </article>
                 );
               })

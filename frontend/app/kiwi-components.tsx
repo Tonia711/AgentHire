@@ -4,12 +4,17 @@ import { FormEvent, useState } from "react";
 import {
   ChatMessage,
   Contractor,
+  ContractorResponse,
   ContractorStatus,
   DummyContractorAccount,
   Invoice,
   InvoiceStatus,
   TaskRequest,
 } from "./kiwi-state";
+
+function getResponseLabel(response: ContractorResponse) {
+  return response === "ACCEPTED_ELSEWHERE" ? "ACCEPTED ELSEWHERE" : response;
+}
 
 export function ContractorStatusBadge({ status }: { status: ContractorStatus }) {
   return (
@@ -31,7 +36,11 @@ export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   return (
     <span
       className={`rounded-full px-3 py-1 text-xs font-bold ${
-        status === "PAID" ? "bg-[#e7f2ee] text-[#155b49]" : "bg-[#f6c64f] text-[#17211d]"
+        status === "PAID"
+          ? "bg-[#e7f2ee] text-[#155b49]"
+          : status === "SENT_TO_CLIENT"
+            ? "bg-[#fff4d5] text-[#7a5b00]"
+            : "bg-[#eef2ff] text-[#243b7a]"
       }`}
     >
       {status.replaceAll("_", " ")}
@@ -70,6 +79,32 @@ export function WalletPanel({
   );
 }
 
+export function ResetDemoPanel({ onReset }: { onReset: () => void }) {
+  const [status, setStatus] = useState("Clear local demo data when you want to test from scratch.");
+
+  function handleReset() {
+    onReset();
+    setStatus("Local requests and contractor responses have been reset.");
+  }
+
+  return (
+    <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
+      <h2 className="text-2xl font-bold">Demo reset</h2>
+      <p className="mt-2 text-sm text-[#607066]" aria-live="polite">
+        {status}
+      </p>
+      <button
+        className="mt-5 rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold text-[#17211d]"
+        data-testid="reset-local-demo-button"
+        onClick={handleReset}
+        type="button"
+      >
+        Reset local demo
+      </button>
+    </article>
+  );
+}
+
 export function SendTaskRequestBox({
   onSendRequest,
 }: {
@@ -79,9 +114,9 @@ export function SendTaskRequestBox({
     location: string;
   }) => void;
 }) {
-  const [task, setTask] = useState("Install two new office power outlets");
-  const [minPrice, setMinPrice] = useState("300");
-  const [maxPrice, setMaxPrice] = useState("600");
+  const [task, setTask] = useState("Window cleaning for a small office frontage");
+  const [minPrice, setMinPrice] = useState("40");
+  const [maxPrice, setMaxPrice] = useState("80");
   const [location, setLocation] = useState("Wellington CBD");
   const [status, setStatus] = useState("Send a task request to store it locally.");
 
@@ -110,10 +145,10 @@ export function SendTaskRequestBox({
           Task
           <textarea className="min-h-24 rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" data-testid="task-request-input" id="task-request" onChange={(event) => setTask(event.target.value)} required value={task} />
         </label>
-        <div className="grid gap-4 lg:grid-cols-[minmax(240px,0.75fr)_minmax(260px,1fr)]">
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-semibold">Price range</legend>
-            <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4">
+          <fieldset className="grid max-w-[440px] gap-2">
+            <legend className="text-sm font-semibold">Hourly rate range</legend>
+            <div className="grid grid-cols-2 gap-8">
             <label className="grid gap-2 text-sm font-semibold" htmlFor="task-min-price">
               Low
               <input className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" data-testid="task-min-price-input" id="task-min-price" min="0" onChange={(event) => setMinPrice(event.target.value)} required type="number" value={minPrice} />
@@ -124,7 +159,7 @@ export function SendTaskRequestBox({
             </label>
             </div>
           </fieldset>
-          <label className="grid gap-2 text-sm font-semibold" htmlFor="task-location">
+          <label className="grid max-w-[420px] gap-2 text-sm font-semibold" htmlFor="task-location">
             Location
             <input className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" data-testid="task-location-input" id="task-location" onChange={(event) => setLocation(event.target.value)} required value={location} />
           </label>
@@ -160,6 +195,23 @@ export function TaskRequestList({
         ) : (
           requests.map((request) => (
             <article className="rounded-lg border border-[#dde4d8] bg-[#fbfcf8] p-4" data-testid="stored-task-request-card" key={request.id}>
+              {(() => {
+                const acceptedContractor = contractors.find(
+                  (contractor) =>
+                    request.contractorResponses?.[contractor.id] === "ACCEPTED",
+                );
+
+                return acceptedContractor ? (
+                  <div className="mb-4 rounded-md border border-[#b9d8c8] bg-[#e7f2ee] px-3 py-3 text-sm">
+                    <p className="font-bold text-[#155b49]">
+                      Accepted by {acceptedContractor.name}
+                    </p>
+                    <p className="mt-1 text-[#435149]">
+                      {acceptedContractor.expertise} | {acceptedContractor.position} | ${acceptedContractor.hourlyRate}/hr
+                    </p>
+                  </div>
+                ) : null;
+              })()}
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-bold">{request.task}</h3>
@@ -187,8 +239,18 @@ export function TaskRequestList({
 
                     return (
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm" key={contractorId}>
-                        <span>{contractor.name} | {contractor.position} | ${contractor.minPrice}-${contractor.maxPrice}</span>
-                        <span className="font-bold text-[#155b49]">{request.contractorResponses?.[contractorId] ?? "PENDING"}</span>
+                        <span>{contractor.name} | {contractor.expertise} | {contractor.position} | ${contractor.hourlyRate}/hr</span>
+                        <span
+                          className={`font-bold ${
+                            request.contractorResponses?.[contractorId] === "ACCEPTED"
+                              ? "text-[#155b49]"
+                              : request.contractorResponses?.[contractorId] === "REJECTED"
+                                ? "text-[#8a342d]"
+                                : "text-[#7a5b00]"
+                          }`}
+                        >
+                          {getResponseLabel(request.contractorResponses?.[contractorId] ?? "PENDING")}
+                        </span>
                       </div>
                     );
                   })
@@ -209,22 +271,38 @@ export function DummyContractorDashboard({
   contractors: DummyContractorAccount[];
   requests: TaskRequest[];
 }) {
+  const matchedContractors = contractors
+    .map((contractor) => ({
+      contractor,
+      assignedRequests: requests.filter((request) =>
+        (request.matchedContractorIds ?? []).includes(contractor.id),
+      ),
+    }))
+    .filter(({ assignedRequests }) => assignedRequests.length > 0);
+
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold">Contractor dashboard</h2>
+        <h2 className="text-2xl font-bold">Matched contractors</h2>
         <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
-          Live responses
+          {matchedContractors.length} shown
         </span>
       </div>
       <div className="mt-5 grid gap-3">
-        {contractors.map((contractor) => {
-          const assignedRequests = requests.filter((request) =>
-            (request.matchedContractorIds ?? []).includes(contractor.id),
-          );
+        {requests.length === 0 ? (
+          <p className="text-sm text-[#607066]">
+            No request has been sent yet. Matching contractors will appear here after the AI filter runs.
+          </p>
+        ) : matchedContractors.length === 0 ? (
+          <p className="text-sm text-[#607066]">
+            No contractors matched the current request budget and location.
+          </p>
+        ) : (
+          matchedContractors.map(({ contractor, assignedRequests }) => {
           const acceptedRequests = assignedRequests.filter(
             (request) => request.contractorResponses?.[contractor.id] === "ACCEPTED",
           );
+          const latestAcceptedRequest = acceptedRequests[0];
 
           return (
             <article className="rounded-lg border border-[#dde4d8] bg-[#fbfcf8] p-4" key={contractor.id}>
@@ -232,7 +310,7 @@ export function DummyContractorDashboard({
                 <div>
                   <h3 className="text-lg font-bold">{contractor.name}</h3>
                   <p className="mt-1 text-sm text-[#607066]">
-                    {contractor.service} | {contractor.position} | ${contractor.minPrice}-${contractor.maxPrice}
+                    {contractor.expertise} | {contractor.position} | ${contractor.hourlyRate}/hr
                   </p>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#155b49]">
@@ -240,11 +318,19 @@ export function DummyContractorDashboard({
                 </span>
               </div>
 
+              {latestAcceptedRequest && (
+                <div className="mt-4 rounded-md border border-[#b9d8c8] bg-[#e7f2ee] px-3 py-3 text-sm">
+                  <p className="font-bold text-[#155b49]">
+                    Current accepted job
+                  </p>
+                  <p className="mt-1 text-[#435149]">
+                    {latestAcceptedRequest.task} | {latestAcceptedRequest.location} | {latestAcceptedRequest.priceRange}
+                  </p>
+                </div>
+              )}
+
               <div className="mt-4 grid gap-2">
-                {assignedRequests.length === 0 ? (
-                  <p className="text-sm text-[#607066]">No matching requests sent yet.</p>
-                ) : (
-                  assignedRequests.map((request) => {
+                {assignedRequests.map((request) => {
                     const response = request.contractorResponses?.[contractor.id] ?? "PENDING";
 
                     return (
@@ -259,16 +345,15 @@ export function DummyContractorDashboard({
                                 : "text-[#7a5b00]"
                           }`}
                         >
-                          {response}
+                          {getResponseLabel(response)}
                         </span>
                       </div>
                     );
-                  })
-                )}
+                  })}
               </div>
             </article>
           );
-        })}
+        }))}
       </div>
     </article>
   );
@@ -407,47 +492,70 @@ export function VaultViewer({ contractor }: { contractor: Contractor | null }) {
 }
 
 export function InvoicePanel({
-  invoice,
-  onCreateInvoice,
+  contractors,
+  invoices,
   onPayInvoice,
 }: {
-  invoice: Invoice | null;
-  onCreateInvoice: (hours: string) => void;
-  onPayInvoice: () => void;
+  contractors: DummyContractorAccount[];
+  invoices: Invoice[];
+  onPayInvoice: (invoiceId: string) => void;
 }) {
-  const [hours, setHours] = useState("10");
-
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold">Invoice and dNZD payment</h2>
-        {invoice && <InvoiceStatusBadge status={invoice.status} />}
+        <h2 className="text-2xl font-bold">Bills received</h2>
+        <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
+          {invoices.length} bill{invoices.length === 1 ? "" : "s"}
+        </span>
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="grid gap-2 text-sm font-semibold" htmlFor="invoice-hours">
-          Hours worked
-          <input className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" id="invoice-hours" min="1" onChange={(event) => setHours(event.target.value)} type="number" value={hours} />
-        </label>
-        <button className="self-end rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold" onClick={() => onCreateInvoice(hours)} type="button">
-          Create invoice
-        </button>
+      <p className="mt-2 text-sm text-[#607066]">
+        Accepted contractors automatically send bills here. Fuji wallet payment will be wired in later.
+      </p>
+      <div className="mt-5 grid gap-3">
+        {invoices.length === 0 ? (
+          <p className="rounded-md bg-[#fbfcf8] p-3 text-sm text-[#607066]">
+            No bills yet. A bill will appear after a contractor accepts a request.
+          </p>
+        ) : (
+          invoices.map((invoice) => {
+            const billingContractor = contractors.find(
+              (contractor) => contractor.id === invoice.contractorId,
+            );
+
+            return (
+              <article className="rounded-lg border border-[#dde4d8] bg-[#fbfcf8] p-4" key={invoice.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold">
+                      {invoice.description ?? "Contractor bill"}
+                    </h3>
+                    <p className="mt-1 text-sm text-[#607066]">
+                      {billingContractor?.name ?? "Contractor"} | {invoice.hours} hours | {invoice.requestId}
+                    </p>
+                  </div>
+                  <InvoiceStatusBadge status={invoice.status} />
+                </div>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">Subtotal</dt><dd>${invoice.subtotal.toFixed(2)}</dd></div>
+                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">GST 15%</dt><dd>${invoice.gst.toFixed(2)}</dd></div>
+                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">Total dNZD</dt><dd>{invoice.total.toFixed(2)}</dd></div>
+                </dl>
+                {invoice.notes && (
+                  <p className="mt-3 text-sm text-[#607066]">{invoice.notes}</p>
+                )}
+                <button
+                  className="mt-4 rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={invoice.status === "PAID"}
+                  onClick={() => onPayInvoice(invoice.id)}
+                  type="button"
+                >
+                  {invoice.status === "PAID" ? "Paid" : "Pay with Fuji wallet"}
+                </button>
+              </article>
+            );
+          })
+        )}
       </div>
-      {invoice && (
-        <dl className="mt-5 grid gap-3 text-sm md:grid-cols-2">
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Subtotal</dt><dd>${invoice.subtotal.toFixed(2)}</dd></div>
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">GST 15%</dt><dd>${invoice.gst.toFixed(2)}</dd></div>
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Total dNZD</dt><dd>{invoice.total.toFixed(2)}</dd></div>
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Tx</dt><dd>{invoice.txHash}</dd></div>
-        </dl>
-      )}
-      <button
-        className="mt-5 rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
-        disabled={!invoice || invoice.status === "PAID"}
-        onClick={onPayInvoice}
-        type="button"
-      >
-        Pay in dNZD
-      </button>
     </article>
   );
 }

@@ -1,9 +1,16 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 export type ContractorStatus = "INVITED" | "KYC_DONE" | "AGREEMENT_SIGNED" | "ACTIVE";
-export type InvoiceStatus = "DRAFT" | "CREATED_ON_CHAIN" | "PAID";
+export type InvoiceStatus = "DRAFT" | "SENT_TO_CLIENT" | "READY_FOR_FUJI_PAYMENT" | "PAID";
 
 export type Contractor = {
   id: string;
@@ -19,13 +26,18 @@ export type Contractor = {
 };
 
 export type Invoice = {
+  id: string;
   contractorId: string;
+  requestId?: string;
+  description?: string;
   hours: string;
+  notes?: string;
   subtotal: number;
   gst: number;
   total: number;
   status: InvoiceStatus;
   txHash: string;
+  paymentMethod: "FUJI_WALLET_BLUEPRINT";
 };
 
 export type ChatMessage = {
@@ -41,42 +53,49 @@ export type TaskRequest = {
   status: "OPEN";
   createdAt: string;
   matchedContractorIds: string[];
-  contractorResponses: Record<string, "PENDING" | "ACCEPTED" | "REJECTED">;
+  contractorResponses: Record<string, ContractorResponse>;
+  acceptedContractorId?: string;
 };
+
+export type ContractorResponse =
+  | "PENDING"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "ACCEPTED_ELSEWHERE";
 
 export type DummyContractorAccount = {
   id: string;
   name: string;
-  service: string;
+  expertise: string;
   position: string;
-  minPrice: number;
-  maxPrice: number;
+  hourlyRate: number;
+  email: string;
 };
 
 export const dummyContractorAccounts: DummyContractorAccount[] = [
   {
-    id: "clearview-central",
-    name: "ClearView Central",
-    service: "Window cleaning",
+    id: "mia-thompson",
+    name: "Mia Thompson",
+    expertise: "Commercial window cleaning",
     position: "Wellington CBD",
-    minPrice: 250,
-    maxPrice: 550,
+    hourlyRate: 55,
+    email: "mia@kiwicontract.test",
   },
   {
-    id: "harbour-shine",
-    name: "Harbour Shine",
-    service: "Window cleaning",
+    id: "liam-patel",
+    name: "Liam Patel",
+    expertise: "Exterior glass and shopfronts",
     position: "Petone",
-    minPrice: 400,
-    maxPrice: 850,
+    hourlyRate: 72,
+    email: "liam@kiwicontract.test",
   },
   {
-    id: "kapiti-glass-care",
-    name: "Kapiti Glass Care",
-    service: "Window cleaning",
+    id: "ava-williams",
+    name: "Ava Williams",
+    expertise: "Residential window cleaning",
     position: "Paraparaumu",
-    minPrice: 180,
-    maxPrice: 420,
+    hourlyRate: 38,
+    email: "ava@kiwicontract.test",
   },
 ];
 
@@ -182,7 +201,8 @@ function matchContractors(input: {
 
   return dummyContractorAccounts.filter((contractor) => {
     const priceMatches =
-      requestPrice.max >= contractor.minPrice && requestPrice.min <= contractor.maxPrice;
+      contractor.hourlyRate >= requestPrice.min &&
+      contractor.hourlyRate <= requestPrice.max;
     const locationCloseEnough =
       getLocationScore(input.location, contractor.position) <= 1;
     const serviceMatches = input.task.toLowerCase().includes("window");
@@ -199,7 +219,7 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
     ...request,
     matchedContractorIds,
     contractorResponses: matchedContractorIds.reduce<
-      Record<string, "PENDING" | "ACCEPTED" | "REJECTED">
+      Record<string, ContractorResponse>
     >((responses, contractorId) => {
       responses[contractorId] = contractorResponses[contractorId] ?? "PENDING";
       return responses;
@@ -207,9 +227,72 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
   };
 }
 
+const taskRequestStorageKey = "kiwicontract-task-requests";
+const taskRequestChangeEvent = "kiwicontract-task-requests-changed";
+const demoResetChangeEvent = "kiwicontract-demo-reset";
+
+function getTaskRequestSnapshot() {
+  if (typeof window === "undefined") {
+    return "[]";
+  }
+
+  return window.localStorage.getItem(taskRequestStorageKey) ?? "[]";
+}
+
+function subscribeToTaskRequests(onStoreChange: () => void) {
+  window.addEventListener(taskRequestChangeEvent, onStoreChange);
+  window.addEventListener(demoResetChangeEvent, onStoreChange);
+  window.addEventListener("storage", onStoreChange);
+
+  return () => {
+    window.removeEventListener(taskRequestChangeEvent, onStoreChange);
+    window.removeEventListener(demoResetChangeEvent, onStoreChange);
+    window.removeEventListener("storage", onStoreChange);
+  };
+}
+
+function parseTaskRequests(snapshot: string) {
+  try {
+    return (JSON.parse(snapshot) as TaskRequest[]).map(normalizeTaskRequest);
+  } catch {
+    return [];
+  }
+}
+
+function buildBillForAcceptedRequest(input: {
+  contractor: DummyContractorAccount;
+  request: TaskRequest;
+  hours?: string;
+  notes?: string;
+}): Invoice {
+  const hours = input.hours ?? "2";
+  const hourCount = Number(hours || 0);
+  const subtotal = hourCount * input.contractor.hourlyRate;
+  const gst = subtotal * 0.15;
+  const total = subtotal + gst;
+
+  // Later: insert this bill into Supabase, then create a Fuji wallet payment intent.
+  return {
+    id: `BILL-${Date.now()}-${input.contractor.id}`,
+    contractorId: input.contractor.id,
+    requestId: input.request.id,
+    description: input.request.task,
+    hours,
+    notes:
+      input.notes ??
+      "Auto-generated bill after contractor accepted the request.",
+    subtotal,
+    gst,
+    total,
+    status: "SENT_TO_CLIENT",
+    txHash: "Awaiting Fuji wallet payment",
+    paymentMethod: "FUJI_WALLET_BLUEPRINT",
+  };
+}
+
 type KiwiStateContextValue = {
   contractor: Contractor | null;
-  invoice: Invoice | null;
+  invoices: Invoice[];
   taskRequests: TaskRequest[];
   dummyContractors: DummyContractorAccount[];
   walletConnected: boolean;
@@ -220,10 +303,11 @@ type KiwiStateContextValue = {
     priceRange: string;
     location: string;
   }) => void;
+  resetLocalDemo: () => void;
   respondToTaskRequest: (
     requestId: string,
     contractorId: string,
-    response: "ACCEPTED" | "REJECTED",
+    response: "ACCEPTED" | "REJECTED" | "ACCEPTED_ELSEWHERE",
   ) => void;
   inviteContractor: (input: {
     name: string;
@@ -233,7 +317,13 @@ type KiwiStateContextValue = {
   }) => void;
   simulateVerification: () => void;
   createInvoice: (hours: string) => void;
-  payInvoice: () => void;
+  sendBillToClient: (input: {
+    requestId: string;
+    contractorId: string;
+    hours: string;
+    notes: string;
+  }) => void;
+  payInvoice: (invoiceId: string) => void;
   sendAgentPrompt: (prompt: string) => void;
 };
 
@@ -242,24 +332,16 @@ const KiwiStateContext = createContext<KiwiStateContextValue | null>(null);
 export function KiwiStateProvider({ children }: { children: ReactNode }) {
   const [walletConnected, setWalletConnected] = useState(false);
   const [contractor, setContractor] = useState<Contractor | null>(null);
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [taskRequests, setTaskRequests] = useState<TaskRequest[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    const storedRequests = window.localStorage.getItem("kiwicontract-task-requests");
-
-    if (!storedRequests) {
-      return [];
-    }
-
-    try {
-      return (JSON.parse(storedRequests) as TaskRequest[]).map(normalizeTaskRequest);
-    } catch {
-      return [];
-    }
-  });
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const taskRequestSnapshot = useSyncExternalStore(
+    subscribeToTaskRequests,
+    getTaskRequestSnapshot,
+    () => "[]",
+  );
+  const taskRequests = useMemo(
+    () => parseTaskRequests(taskRequestSnapshot),
+    [taskRequestSnapshot],
+  );
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       author: "agent",
@@ -272,11 +354,11 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }
 
   function storeTaskRequests(nextRequests: TaskRequest[]) {
-    setTaskRequests(nextRequests);
     window.localStorage.setItem(
-      "kiwicontract-task-requests",
+      taskRequestStorageKey,
       JSON.stringify(nextRequests),
     );
+    window.dispatchEvent(new Event(taskRequestChangeEvent));
   }
 
   function connectWallet() {
@@ -291,7 +373,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }) {
     const matchedContractors = matchContractors(input);
     const contractorResponses = matchedContractors.reduce<
-      Record<string, "PENDING" | "ACCEPTED" | "REJECTED">
+      Record<string, ContractorResponse>
     >((responses, contractor) => {
       responses[contractor.id] = "PENDING";
       return responses;
@@ -313,14 +395,67 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     addAgentMessage(`Request ${request.id} stored locally and sent to ${matchedContractors.length} matching window cleaning contractor(s).`);
   }
 
+  function resetLocalDemo() {
+    setContractor(null);
+    setInvoices([]);
+    window.localStorage.removeItem(taskRequestStorageKey);
+    window.dispatchEvent(new Event(taskRequestChangeEvent));
+    window.dispatchEvent(new Event(demoResetChangeEvent));
+    addAgentMessage("Local demo reset. Requests, contractor responses, and accepted jobs were cleared.");
+  }
+
   function respondToTaskRequest(
     requestId: string,
     contractorId: string,
-    response: "ACCEPTED" | "REJECTED",
+    response: "ACCEPTED" | "REJECTED" | "ACCEPTED_ELSEWHERE",
   ) {
     const nextRequests = taskRequests.map((request) => {
       if (request.id !== requestId) {
         return request;
+      }
+
+      if (response === "ACCEPTED") {
+        const acceptedContractor = dummyContractorAccounts.find(
+          (account) => account.id === contractorId,
+        );
+        const contractorResponses = request.matchedContractorIds.reduce<
+          Record<string, ContractorResponse>
+        >((responses, matchedContractorId) => {
+          responses[matchedContractorId] =
+            matchedContractorId === contractorId ? "ACCEPTED" : "ACCEPTED_ELSEWHERE";
+          return responses;
+        }, {});
+
+        if (acceptedContractor) {
+          setContractor({
+            id: acceptedContractor.id,
+            name: acceptedContractor.name,
+            email: acceptedContractor.email,
+            trade: acceptedContractor.expertise,
+            hourlyRate: String(acceptedContractor.hourlyRate),
+            status: "ACTIVE",
+            walletAddress: "0xDemo...contractor",
+            civicPassId: "demo-profile",
+            luminDocument: "Service agreement pending",
+            attestationUid: "",
+          });
+          const bill = buildBillForAcceptedRequest({
+            contractor: acceptedContractor,
+            request,
+          });
+
+          setInvoices((currentBills) => [
+            bill,
+            ...currentBills.filter((currentBill) => currentBill.requestId !== request.id),
+          ]);
+          addAgentMessage(`${acceptedContractor.name} accepted ${request.task}. A bill was automatically sent to the client at $${acceptedContractor.hourlyRate}/hr.`);
+        }
+
+        return {
+          ...request,
+          acceptedContractorId: contractorId,
+          contractorResponses,
+        };
       }
 
       return {
@@ -356,7 +491,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     };
 
     setContractor(invitedContractor);
-    setInvoice(null);
+    setInvoices([]);
     addAgentMessage(`Done. Sent ${input.name} an invite at ${input.email}. I will let you know when verification is complete.`);
   }
 
@@ -388,34 +523,97 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     const total = subtotal + gst;
 
     // Later: call Invoice.sol createInvoice() with ethers.js once Team 3 shares addresses.
-    setInvoice({
+    setInvoices((currentBills) => [{
+      id: `BILL-${Date.now()}`,
       contractorId: contractor.id,
       hours,
       subtotal,
       gst,
       total,
-      status: "CREATED_ON_CHAIN",
-      txHash: "0xinvoice...fuji",
-    });
-    addAgentMessage(`Invoice created: $${subtotal.toFixed(2)} + $${gst.toFixed(2)} GST = $${total.toFixed(2)} dNZD.`);
+      status: "READY_FOR_FUJI_PAYMENT",
+      txHash: "Fuji wallet payment not submitted yet",
+      paymentMethod: "FUJI_WALLET_BLUEPRINT",
+    }, ...currentBills]);
+    addAgentMessage(`Invoice prepared for Fuji wallet payment: $${subtotal.toFixed(2)} + $${gst.toFixed(2)} GST = $${total.toFixed(2)} dNZD.`);
   }
 
-  function payInvoice() {
-    if (!invoice || !contractor) {
+  function sendBillToClient(input: {
+    requestId: string;
+    contractorId: string;
+    hours: string;
+    notes: string;
+  }) {
+    const billingContractor = dummyContractorAccounts.find(
+      (account) => account.id === input.contractorId,
+    );
+    const request = taskRequests.find((item) => item.id === input.requestId);
+
+    if (!billingContractor || !request) {
+      addAgentMessage("Could not send the bill because the contractor or request was not found.");
       return;
     }
 
-    // Later: run Binance Skills market checks, then transfer MockDNZD on Fuji with ethers.js.
-    setInvoice({
-      ...invoice,
-      status: "PAID",
-      txHash: "0xpaid...dnzd",
+    const bill = buildBillForAcceptedRequest({
+      contractor: billingContractor,
+      request,
+      hours: input.hours,
+      notes: input.notes,
     });
+
+    setInvoices((currentBills) => [
+      bill,
+      ...currentBills.filter((currentBill) => currentBill.requestId !== request.id),
+    ]);
     setContractor({
-      ...contractor,
+      id: billingContractor.id,
+      name: billingContractor.name,
+      email: billingContractor.email,
+      trade: billingContractor.expertise,
+      hourlyRate: String(billingContractor.hourlyRate),
       status: "ACTIVE",
+      walletAddress: "0xDemo...contractor",
+      civicPassId: "demo-profile",
+      luminDocument: "Service agreement pending",
+      attestationUid: "",
     });
-    addAgentMessage(`Binance market check passed. Sent ${invoice.total.toFixed(2)} dNZD to ${contractor.name}.`);
+    addAgentMessage(`${billingContractor.name} sent a bill to the client for ${request.task}. Total due is $${bill.total.toFixed(2)} dNZD.`);
+  }
+
+  function payInvoice(invoiceId: string) {
+    const invoiceToPay = invoices.find((invoice) => invoice.id === invoiceId);
+    const billingContractor = invoiceToPay
+      ? dummyContractorAccounts.find((account) => account.id === invoiceToPay.contractorId)
+      : null;
+
+    if (!invoiceToPay || !billingContractor) {
+      return;
+    }
+
+    // Later: hand this off to Fuji wallet, then transfer MockDNZD on Avalanche Fuji.
+    setInvoices((currentBills) =>
+      currentBills.map((invoice) =>
+        invoice.id === invoiceId
+          ? {
+              ...invoice,
+              status: "PAID",
+              txHash: "0xfuji-wallet-payment-demo",
+            }
+          : invoice,
+      ),
+    );
+    setContractor({
+      id: billingContractor.id,
+      name: billingContractor.name,
+      email: billingContractor.email,
+      trade: billingContractor.expertise,
+      hourlyRate: String(billingContractor.hourlyRate),
+      status: "ACTIVE",
+      walletAddress: "0xDemo...contractor",
+      civicPassId: "demo-profile",
+      luminDocument: "Service agreement pending",
+      attestationUid: "",
+    });
+    addAgentMessage(`Fuji wallet blueprint complete. Marked ${invoiceToPay.total.toFixed(2)} dNZD as paid to ${billingContractor.name}.`);
   }
 
   function sendAgentPrompt(prompt: string) {
@@ -429,7 +627,11 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     }
 
     if (normalized.includes("pay")) {
-      payInvoice();
+      const unpaidInvoice = invoices.find((item) => item.status !== "PAID");
+
+      if (unpaidInvoice) {
+        payInvoice(unpaidInvoice.id);
+      }
       return;
     }
 
@@ -450,17 +652,19 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     <KiwiStateContext.Provider
       value={{
         contractor,
-        invoice,
+        invoices,
         taskRequests,
         dummyContractors: dummyContractorAccounts,
         walletConnected,
         chatMessages,
         connectWallet,
         sendTaskRequest,
+        resetLocalDemo,
         respondToTaskRequest,
         inviteContractor,
         simulateVerification,
         createInvoice,
+        sendBillToClient,
         payInvoice,
         sendAgentPrompt,
       }}

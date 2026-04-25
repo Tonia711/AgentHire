@@ -1,14 +1,17 @@
 import Link from "next/link";
+import { useKiwiState } from "./kiwi-state";
 
 const links = [
   ["Home", "/"],
   ["Business", "/client"],
-  ["ClearView", "/contractors/clearview-central"],
-  ["Harbour", "/contractors/harbour-shine"],
-  ["Kapiti", "/contractors/kapiti-glass-care"],
+  ["Mia", "/contractors/mia-thompson"],
+  ["Liam", "/contractors/liam-patel"],
+  ["Ava", "/contractors/ava-williams"],
 ];
 
 export default function TempNav() {
+  const { resetLocalDemo } = useKiwiState();
+
   return (
     <nav
       aria-label="Temporary page navigation"
@@ -25,6 +28,14 @@ export default function TempNav() {
           {label}
         </Link>
       ))}
+      <button
+        className="rounded-md border border-[#d9ded2] px-3 py-2 text-sm font-bold text-[#17211d] hover:bg-[#e7f2ee]"
+        data-testid="temp-nav-reset-button"
+        onClick={resetLocalDemo}
+        type="button"
+      >
+        Reset
+      </button>
     </nav>
   );
 }
