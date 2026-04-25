@@ -14,7 +14,7 @@ begin
   end if;
 end$$;
 
-do $$
+do $$3
 begin
   if not exists (select 1 from pg_type where typname = 'invoice_status') then
     create type public.invoice_status as enum ('created', 'paid', 'disputed');
