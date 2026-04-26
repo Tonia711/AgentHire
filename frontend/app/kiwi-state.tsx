@@ -27,6 +27,7 @@ export type Contractor = {
 
 export type Invoice = {
   id: string;
+  clientId: string;
   contractorId: string;
   requestId?: string;
   description?: string;
@@ -47,6 +48,7 @@ export type ChatMessage = {
 
 export type TaskRequest = {
   id: string;
+  clientId: string;
   task: string;
   priceRange: string;
   location: string;
@@ -217,6 +219,7 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
 
   return {
     ...request,
+    clientId: request.clientId ?? "client-1",
     matchedContractorIds,
     contractorResponses: matchedContractorIds.reduce<
       Record<string, ContractorResponse>
@@ -259,6 +262,35 @@ function parseTaskRequests(snapshot: string) {
   }
 }
 
+type TaskRequestInput = {
+  clientId?: string;
+  task: string;
+  priceRange: string;
+  location: string;
+};
+
+function buildTaskRequest(input: TaskRequestInput, index = 0): TaskRequest {
+  const matchedContractors = matchContractors(input);
+  const contractorResponses = matchedContractors.reduce<
+    Record<string, ContractorResponse>
+  >((responses, contractor) => {
+    responses[contractor.id] = "PENDING";
+    return responses;
+  }, {});
+
+  return {
+    id: `REQ-${Date.now()}-${index}`,
+    clientId: input.clientId ?? "client-1",
+    task: input.task,
+    priceRange: formatPriceRange(input.priceRange),
+    location: input.location,
+    status: "OPEN",
+    createdAt: new Date().toLocaleString(),
+    matchedContractorIds: matchedContractors.map((contractor) => contractor.id),
+    contractorResponses,
+  };
+}
+
 function buildBillForAcceptedRequest(input: {
   contractor: DummyContractorAccount;
   request: TaskRequest;
@@ -274,6 +306,7 @@ function buildBillForAcceptedRequest(input: {
   // Later: insert this bill into Supabase, then create a Fuji wallet payment intent.
   return {
     id: `BILL-${Date.now()}-${input.contractor.id}`,
+    clientId: input.request.clientId,
     contractorId: input.contractor.id,
     requestId: input.request.id,
     description: input.request.task,
@@ -299,10 +332,12 @@ type KiwiStateContextValue = {
   chatMessages: ChatMessage[];
   connectWallet: () => void;
   sendTaskRequest: (input: {
+    clientId?: string;
     task: string;
     priceRange: string;
     location: string;
   }) => void;
+  seedDemoRequests: (clientId?: string) => void;
   resetLocalDemo: () => void;
   respondToTaskRequest: (
     requestId: string,
@@ -367,32 +402,63 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }
 
   function sendTaskRequest(input: {
+    clientId?: string;
     task: string;
     priceRange: string;
     location: string;
   }) {
-    const matchedContractors = matchContractors(input);
-    const contractorResponses = matchedContractors.reduce<
-      Record<string, ContractorResponse>
-    >((responses, contractor) => {
-      responses[contractor.id] = "PENDING";
-      return responses;
-    }, {});
-
-    const request: TaskRequest = {
-      id: `REQ-${Date.now()}`,
-      task: input.task,
-      priceRange: formatPriceRange(input.priceRange),
-      location: input.location,
-      status: "OPEN",
-      createdAt: new Date().toLocaleString(),
-      matchedContractorIds: matchedContractors.map((contractor) => contractor.id),
-      contractorResponses,
-    };
+    const request = buildTaskRequest(input);
 
     // Local database for now: persist requests in localStorage until Supabase is connected.
     storeTaskRequests([request, ...taskRequests]);
-    addAgentMessage(`Request ${request.id} stored locally and sent to ${matchedContractors.length} matching window cleaning contractor(s).`);
+    addAgentMessage(`Request ${request.id} stored locally and sent to ${request.matchedContractorIds.length} matching window cleaning contractor(s).`);
+  }
+
+  function seedDemoRequests(clientId = "client-1") {
+    const demoRequests: TaskRequestInput[] = [
+      {
+        clientId,
+        task: "Window cleaning for a small office frontage",
+        priceRange: "$40-$80",
+        location: "Wellington CBD",
+      },
+      {
+        clientId,
+        task: "Exterior window cleaning for a Petone shopfront",
+        priceRange: "$65-$90",
+        location: "Petone",
+      },
+      {
+        clientId,
+        task: "Residential window cleaning for a townhouse",
+        priceRange: "$30-$45",
+        location: "Paraparaumu",
+      },
+      {
+        clientId,
+        task: "Window cleaning for a medical clinic entrance",
+        priceRange: "$35-$60",
+        location: "Wellington CBD",
+      },
+      {
+        clientId,
+        task: "Window cleaning for a coastal office block",
+        priceRange: "$35-$80",
+        location: "Paraparaumu",
+      },
+      {
+        clientId,
+        task: "Retail window cleaning after renovation dust",
+        priceRange: "$50-$75",
+        location: "Petone",
+      },
+    ];
+    const seededRequests = demoRequests.map((request, index) =>
+      buildTaskRequest(request, index),
+    );
+
+    storeTaskRequests([...seededRequests, ...taskRequests]);
+    addAgentMessage("Demo loaded. Six requests were posted with matches across Mia, Liam, and Ava.");
   }
 
   function resetLocalDemo() {
@@ -525,6 +591,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     // Later: call Invoice.sol createInvoice() with ethers.js once Team 3 shares addresses.
     setInvoices((currentBills) => [{
       id: `BILL-${Date.now()}`,
+      clientId: "client-1",
       contractorId: contractor.id,
       hours,
       subtotal,
@@ -659,6 +726,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
         chatMessages,
         connectWallet,
         sendTaskRequest,
+        seedDemoRequests,
         resetLocalDemo,
         respondToTaskRequest,
         inviteContractor,

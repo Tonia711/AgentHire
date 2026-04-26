@@ -1,6 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, ReactNode, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import TempNav from "./temp-nav";
 import {
   ChatMessage,
   Contractor,
@@ -14,6 +17,126 @@ import {
 
 function getResponseLabel(response: ContractorResponse) {
   return response === "ACCEPTED_ELSEWHERE" ? "ACCEPTED ELSEWHERE" : response;
+}
+
+export function AppShell({
+  alertCount = 0,
+  alertLabel,
+  children,
+  eyebrow,
+  onWalletClick,
+  role,
+  title,
+  walletConnected,
+}: {
+  alertCount?: number;
+  alertLabel?: string;
+  children: ReactNode;
+  eyebrow: string;
+  onWalletClick?: () => void;
+  role: "business" | "contractor";
+  title: string;
+  walletConnected: boolean;
+}) {
+  const pathname = usePathname();
+  const isClientTwo = pathname.startsWith("/business2");
+  const businessRoot = isClientTwo ? "/business2" : "/business";
+  const businessNavItems = [
+    ["Home", businessRoot],
+    ["Posted Jobs", `${businessRoot}/jobs`],
+    ["Money", `${businessRoot}/money`],
+  ];
+  const contractorMatch = pathname.match(/^\/contractors\/([^/]+)/);
+  const contractorId = contractorMatch?.[1] ?? "mia-thompson";
+  const contractorNavItems = contractorMatch
+    ? [
+        ["Requests", `/contractors/${contractorId}`],
+        ["History", `/contractors/${contractorId}/history`],
+      ]
+    : [
+        ["Get Ready", "/contractor"],
+        ["My Work", "/contractor/work"],
+        ["My Records", "/contractor/records"],
+        ["Wallet", "/contractor/wallet"],
+        ["Settings", "/contractor/settings"],
+      ];
+  const navItems = role === "business" ? businessNavItems : contractorNavItems;
+
+  return (
+    <main className="min-h-screen bg-[#f7f8f4] text-[#17211d]">
+      <div className="grid min-h-screen lg:grid-cols-[240px_1fr]">
+        <aside className="border-b border-[#d9ded2] bg-[#fffdf7] p-5 lg:border-b-0 lg:border-r">
+          <Link className="block text-xl font-bold" href="/">
+            KiwiContract
+          </Link>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#587064]">
+            {role === "business" ? "Business" : "Contractor"}
+          </p>
+          <nav className="mt-6 flex gap-2 overflow-x-auto lg:grid lg:overflow-visible" aria-label={`${role} navigation`}>
+            {navItems.map(([label, href]) => {
+              const baseHref = href.split("#")[0];
+              const isActive =
+                (role === "contractor" && label === "Requests" && pathname === baseHref) ||
+                (role === "contractor" && label !== "Requests" && pathname === baseHref) ||
+                (href === "/business" && pathname === "/client") ||
+                (role === "business" && pathname === baseHref);
+
+              return (
+                <Link
+                  className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-bold ${
+                    isActive ? "bg-[#e7f2ee] text-[#155b49]" : "text-[#435149] hover:bg-[#f2f5ee]"
+                  }`}
+                  href={href}
+                  key={href}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <section>
+          <header className="border-b border-[#d9ded2] bg-[#fffdf7]">
+            <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-8 lg:px-10">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#587064]">
+                  {eyebrow}
+                </p>
+                <h1 className="mt-1 text-3xl font-bold">{title}</h1>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {role === "business" && (
+                  <label className="hidden min-w-64 rounded-md border border-[#cfd8ca] bg-white px-3 py-2 text-sm text-[#607066] md:block">
+                    Search jobs, bills, contractors
+                  </label>
+                )}
+                <button
+                  className={`rounded-full border px-3 py-2 text-sm font-bold ${
+                    alertCount > 0
+                      ? "border-[#f6c64f] bg-[#fff4d5] text-[#7a5b00]"
+                      : "border-[#d9ded2] bg-white text-[#17211d]"
+                  }`}
+                  type="button"
+                >
+                  {alertCount > 0 ? alertLabel ?? `Alerts (${alertCount})` : "Alerts"}
+                </button>
+                <button
+                  className="rounded-full border border-[#b9c2b2] bg-white px-3 py-2 text-sm font-bold text-[#17211d]"
+                  onClick={onWalletClick}
+                  type="button"
+                >
+                  {walletConnected ? "Wallet connected" : "Wallet disconnected"}
+                </button>
+              </div>
+            </div>
+          </header>
+          {children}
+        </section>
+      </div>
+      <TempNav />
+    </main>
+  );
 }
 
 export function ContractorStatusBadge({ status }: { status: ContractorStatus }) {
@@ -58,13 +181,13 @@ export function WalletPanel({
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-[#17211d] p-5 text-white shadow-sm">
       <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a8cbbf]">
-        Fuji wallet
+        Wallet
       </p>
       <h2 className="mt-1 text-2xl font-bold">
         {connected ? "Wallet connected" : "Connect wallet"}
       </h2>
       <p className="mt-2 text-sm text-[#c7d8d2]">
-        RainbowKit + wagmi will replace this stub when dependencies are installed.
+        Wallet connection will be wired into the real payment flow later.
       </p>
       <button
         className="mt-5 rounded-md bg-[#f6c64f] px-4 py-3 text-sm font-bold text-[#17211d] disabled:cursor-not-allowed disabled:opacity-60"
@@ -73,7 +196,7 @@ export function WalletPanel({
         onClick={onConnect}
         type="button"
       >
-        {connected ? "Connected to Fuji" : "Connect Fuji wallet"}
+        {connected ? "Connected" : "Connect wallet"}
       </button>
     </article>
   );
@@ -136,7 +259,7 @@ export function SendTaskRequestBox({
 
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
-      <h2 className="text-2xl font-bold">Send request</h2>
+      <h2 className="text-2xl font-bold">Post a job</h2>
       <p className="mt-2 text-sm text-[#607066]" aria-live="polite">
         {status}
       </p>
@@ -165,7 +288,7 @@ export function SendTaskRequestBox({
           </label>
         </div>
         <button className="rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white sm:w-fit" data-testid="send-task-request-button" type="submit">
-          Send Request
+          Post Job
         </button>
       </form>
     </article>
@@ -182,7 +305,7 @@ export function TaskRequestList({
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold">Local request database</h2>
+        <h2 className="text-2xl font-bold">Jobs</h2>
         <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
           {requests.length} stored
         </span>
@@ -474,17 +597,17 @@ export function ContractorList({ contractor }: { contractor: Contractor | null }
 export function VaultViewer({ contractor }: { contractor: Contractor | null }) {
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
-      <h2 className="text-2xl font-bold">Vault viewer</h2>
+      <h2 className="text-2xl font-bold">Trust Vault</h2>
       {contractor?.attestationUid ? (
         <dl className="mt-5 grid gap-3 text-sm">
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Civic Pass</dt><dd>{contractor.civicPassId}</dd></div>
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Lumin document</dt><dd>{contractor.luminDocument}</dd></div>
-          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">EAS UID</dt><dd>{contractor.attestationUid}</dd></div>
+          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Identity Check</dt><dd>{contractor.civicPassId}</dd></div>
+          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Signed Agreement</dt><dd>{contractor.luminDocument}</dd></div>
+          <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Trust Record</dt><dd>{contractor.attestationUid}</dd></div>
           <div className="rounded-md bg-[#fbfcf8] p-3"><dt className="font-semibold">Snowtrace</dt><dd>Fuji link placeholder</dd></div>
         </dl>
       ) : (
         <p className="mt-3 text-sm text-[#607066]">
-          Civic, Lumin, and EAS records appear here after verification.
+          Identity, agreement, and payment records appear here after verification.
         </p>
       )}
     </article>

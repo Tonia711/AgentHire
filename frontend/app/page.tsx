@@ -16,7 +16,7 @@ export default function Home() {
     );
   }
 
-  const destination = role === "business" ? "/client" : "/contractor";
+  const destination = role === "business" ? "/business" : "/contractor";
 
   return (
     <main className="min-h-screen bg-[#f7f8f4] text-[#17211d]">
@@ -30,8 +30,8 @@ export default function Home() {
             AI-powered contractor management for Aotearoa.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-8 text-[#53645b]">
-            Business owners invite contractors, verify identity, sign agreements,
-            create invoices, and pay in digital NZ Dollars on Avalanche Fuji.
+            Business owners post jobs, match with contractors, verify trust records,
+            receive bills, and pay with a wallet when the work is done.
           </p>
         </div>
 
@@ -81,8 +81,8 @@ export default function Home() {
                     <span className="font-bold capitalize">{item}</span>
                     <span className="mt-2 block text-sm text-[#607066]">
                       {item === "business"
-                        ? "Invite contractors, run the AI agent, and pay dNZD."
-                        : "Complete Civic KYC and sign agreements."}
+                        ? "Post jobs, review matches, and pay contractor bills."
+                        : "Complete your checklist and manage accepted work."}
                     </span>
                   </label>
                 ))}
