@@ -1,6 +1,6 @@
 # KiwiContract — Project To-Do & QA Status
 
-_Last updated: 2026-04-25 (post read-only validation + 5 fixes)_
+_Last updated: 2026-04-26 (added MCP demo server)_
 
 This is the single source of truth for what's done, what's left, and what has actually been verified vs. what still needs hands-on confirmation.
 
@@ -56,7 +56,25 @@ This is the single source of truth for what's done, what's left, and what has ac
 | On-chain bytecode + state probe | All 4 contracts deployed; balances + nextId match handoff doc |
 | External services smoke test | Lumin reachable; Fuji RPC reachable; Snowtrace reachable in browser; Binance public API reachable (specific endpoint was broken — fixed below) |
 
-### 2.4 Fixes applied this session — 🟢 Done, untested in browser
+### 2.4 MCP demo server (2026-04-26 session) — ✅ Done & verified
+
+Stdio MCP server at `mcp/` that exposes 4 tools to Claude Code so an LLM can drive the marketplace flow end to end on Fuji. Demo verbs map to: services as listings (`1a`), agents = contractors (`2a`), real Fuji txs (`3a`).
+
+| Item | Evidence |
+|---|---|
+| `mcp/` package scaffolded (TypeScript, stdio server, ethers v6 + supabase-js) | `mcp/package.json`, `mcp/src/index.ts`, `mcp/tsconfig.json` |
+| 4 tools: `list_agents`, `get_service`, `place_order`, `make_payment` | `mcp/src/index.ts:88-138` |
+| `place_order` writes Supabase invoice + calls `Invoice.createInvoice` on Fuji | `mcp/src/index.ts:170-210` |
+| `make_payment` transfers dNZD on Fuji + calls `Invoice.markPaid` + writes `payments` row + flips invoice → `paid` | `mcp/src/index.ts:212-258` |
+| Migration `0003_services.sql` adds `services` table + 3 seed listings + `invoices.service_id` FK | `backend/supabase/migrations/0003_services.sql` |
+| Env loader handles UTF-8 / UTF-8-BOM / UTF-16-LE/BE; auto-aliases `NEXT_PUBLIC_*` ↔ canonical names; last-wins | `mcp/src/index.ts:14-48` |
+| Server registered globally in `~/.claude.json` as `agenthire` (stdio, npx tsx) | `~/.claude.json` `mcpServers.agenthire` |
+| Smoke test: server prints `agenthire-mcp ready on stdio` and accepts MCP handshake | `npx tsx src/index.ts` exit clean |
+| Demo wallets: BUYER `0xB8AaB6…F09eD` funded with 0.025 AVAX + 5,000 dNZD; SELLER `0x557F9b…028446` ready (Sarah's `wallet_address`) | `eth_getBalance` + `MockDNZD.balanceOf` confirmed |
+| Supabase project mismatch resolved: `mcp/.env` now points at AgentHire project `mevlpenppzadimcpxvad` (frontend stays on `jqqondvcxreffukewznp`) | URL ref + JWT `ref` claim both `mevlpenppzadimcpxvad` |
+| Sarah's `wallet_address` migrated from placeholder `0xC0N7RAC7…` → real seller EOA | UPDATE confirmed via supabase-js with service-role key |
+
+### 2.5 Fixes applied this session — 🟢 Done, untested in browser
 
 | # | Fix | Files | What changed |
 |---|---|---|---|
@@ -77,6 +95,8 @@ All 5 changes pass `npx tsc --noEmit` with zero errors.
 | Priority | Item | Owner | Action |
 |---|---|---|---|
 | 🔴 P0 | **Supabase RLS disable** | You (Supabase dashboard) | In SQL editor at `https://supabase.com/dashboard/project/jqqondvcxreffukewznp/sql` run: `alter table businesses disable row level security; alter table contractors disable row level security; alter table invoices disable row level security; alter table attestations disable row level security;` — 30 sec. Without this, every dashboard write silently no-ops. |
+| 🟡 P1 | **Restart Claude Code to load MCP** | You | Quit and reopen Claude Code so `~/.claude.json` is re-read. Run `/mcp` — should show `agenthire ✓` with 4 tools. |
+| 🟡 P1 | **Live MCP demo dry run** | You | After restart, prompt: *"Use agenthire. List active services, then place an order for the cheapest one, then pay it."* Confirm: snowtrace links resolve, dNZD lands in `0x557F9b…028446`, Supabase `invoices` row flips to `paid`. |
 | 🟡 P2 | **Rename env var in `.env.local`** | You | Change `ANTHROPIC_API_KEY=…` to `OPENAI_API_KEY=…` (same value). Code already accepts both. |
 
 ### 3.2 Code work — ⚪ Not started
@@ -86,6 +106,8 @@ All 5 changes pass `npx tsc --noEmit` with zero errors.
 | 🟡 P2 | Snowtrace footer with all 4 contract addresses | 10 min | Per `TEAM1_STATUS.md` — gives judges click-through proof |
 | 🟡 P2 | Replace 3 hardcoded window-cleaning rows with live Supabase query | 15 min | Per `TEAM1_STATUS.md` |
 | 🟡 P2 | Persist chat history (localStorage or Supabase) | 20 min | Demo robustness — survives accidental refresh |
+| 🟡 P3 | MCP server: HTTP/SSE variant for claude.ai web demo | 4–6 hrs | Current stdio variant only works with Claude Code/Desktop. Hosted on Vercel/Railway with the streamable HTTP transport. |
+| 🟡 P3 | MCP server: more services (cleaning, plumbing) seeded across multiple contractors | 30 min | Currently 3 listings, all from Sarah. Adds variety for `list_agents` demo. |
 | ⚪ P3 | `event InvoicePaid` declared in `Invoice.sol:22` but never emitted by `markPaid()` | 5 min Solidity + redeploy | Cosmetic; nothing breaks |
 | ⚪ P3 | Wire Team 2's edge functions or formally decide they're unused | depends | Currently writing direct from browser |
 
