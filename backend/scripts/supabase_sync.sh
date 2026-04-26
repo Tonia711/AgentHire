@@ -27,5 +27,6 @@ echo "Deploying edge functions..."
 supabase functions deploy invite-contractor --workdir backend --project-ref "$PROJECT_REF"
 supabase functions deploy update-contractor-status --workdir backend --project-ref "$PROJECT_REF"
 supabase functions deploy log-payment --workdir backend --project-ref "$PROJECT_REF"
+supabase functions deploy civic-webhook --workdir backend --project-ref "$PROJECT_REF"
 
 echo "Done. Supabase backend synced for project: $PROJECT_REF"

@@ -51,4 +51,18 @@ The script runs:
 
 - `supabase link --workdir backend --project-ref <project-ref>`
 - `supabase db push --workdir backend`
-- deploys `invite-contractor`, `update-contractor-status`, and `log-payment`
+- deploys `invite-contractor`, `update-contractor-status`, `log-payment`, and `civic-webhook`
+
+## Civic webhook environment variables
+
+Set these as Supabase function secrets before enabling real Civic KYC:
+
+- `CIVIC_WEBHOOK_SECRET` (required for signature verification)
+
+Optional payload mapping fields expected by `civic-webhook`:
+
+- `contractorId` or `contractor_id` (or fallback `email`)
+- `attestationUid` / `attestation_uid`
+- `schemaUid` / `schema_uid`
+- `documentHash` / `document_hash`
+- `txHash` / `tx_hash`
