@@ -1,14 +1,35 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useKiwiState } from "./kiwi-state";
 
 const links = [
   ["Home", "/"],
-  ["Business", "/client"],
-  ["ClearView", "/contractors/clearview-central"],
-  ["Harbour", "/contractors/harbour-shine"],
-  ["Kapiti", "/contractors/kapiti-glass-care"],
+  ["Client 1", "/business"],
+  ["Client 2", "/business2"],
+  ["Jobs", "/business/jobs"],
+  ["Money", "/business/money"],
+  ["Mia", "/contractors/mia-thompson"],
+  ["Liam", "/contractors/liam-patel"],
+  ["Ava", "/contractors/ava-williams"],
 ];
 
 export default function TempNav() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { resetLocalDemo, seedDemoRequests } = useKiwiState();
+
+  function handleDemo() {
+    const clientId = pathname.startsWith("/business2") ? "client-2" : "client-1";
+
+    seedDemoRequests(clientId);
+
+    if (!pathname.startsWith("/business") && pathname !== "/client") {
+      router.push("/business");
+    }
+  }
+
   return (
     <nav
       aria-label="Temporary page navigation"
@@ -25,6 +46,22 @@ export default function TempNav() {
           {label}
         </Link>
       ))}
+      <button
+        className="rounded-md border border-[#d9ded2] px-3 py-2 text-sm font-bold text-[#17211d] hover:bg-[#e7f2ee]"
+        data-testid="temp-nav-reset-button"
+        onClick={resetLocalDemo}
+        type="button"
+      >
+        Reset
+      </button>
+      <button
+        className="rounded-md border border-[#d9ded2] px-3 py-2 text-sm font-bold text-[#17211d] hover:bg-[#e7f2ee]"
+        data-testid="temp-nav-demo-button"
+        onClick={handleDemo}
+        type="button"
+      >
+        Demo
+      </button>
     </nav>
   );
 }

@@ -18,7 +18,7 @@ import {
 } from "../lib/supabase-queries";
 
 export type ContractorStatus = "INVITED" | "KYC_DONE" | "AGREEMENT_SIGNED" | "ACTIVE";
-export type InvoiceStatus = "DRAFT" | "CREATED_ON_CHAIN" | "PAID";
+export type InvoiceStatus = "DRAFT" | "SENT_TO_CLIENT" | "READY_FOR_FUJI_PAYMENT" | "PAID";
 
 export type Contractor = {
   id: string;
@@ -35,8 +35,13 @@ export type Contractor = {
 };
 
 export type Invoice = {
+  id: string;
+  clientId: string;
   contractorId: string;
+  requestId?: string;
+  description?: string;
   hours: string;
+  notes?: string;
   subtotal: number;
   gst: number;
   total: number;
@@ -52,22 +57,30 @@ export type ChatMessage = {
 
 export type TaskRequest = {
   id: string;
+  clientId: string;
   task: string;
   priceRange: string;
   location: string;
   status: "OPEN";
   createdAt: string;
   matchedContractorIds: string[];
-  contractorResponses: Record<string, "PENDING" | "ACCEPTED" | "REJECTED">;
+  contractorResponses: Record<string, ContractorResponse>;
+  acceptedContractorId?: string;
 };
+
+export type ContractorResponse =
+  | "PENDING"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "ACCEPTED_ELSEWHERE";
 
 export type DummyContractorAccount = {
   id: string;
   name: string;
-  service: string;
+  expertise: string;
   position: string;
-  minPrice: number;
-  maxPrice: number;
+  hourlyRate: number;
+  email: string;
 };
 
 // Sarah demo wallet — pre-funded by Team 3 in TEAM3_HANDOFF.md
@@ -75,28 +88,28 @@ const SARAH_WALLET = "0x635B5c22889127D976eFeC1160a103f06b5a7Aff";
 
 export const dummyContractorAccounts: DummyContractorAccount[] = [
   {
-    id: "clearview-central",
-    name: "ClearView Central",
-    service: "Window cleaning",
+    id: "mia-thompson",
+    name: "Mia Thompson",
+    expertise: "Commercial window cleaning",
     position: "Wellington CBD",
-    minPrice: 250,
-    maxPrice: 550,
+    hourlyRate: 55,
+    email: "mia@kiwicontract.test",
   },
   {
-    id: "harbour-shine",
-    name: "Harbour Shine",
-    service: "Window cleaning",
+    id: "liam-patel",
+    name: "Liam Patel",
+    expertise: "Exterior glass and shopfronts",
     position: "Petone",
-    minPrice: 400,
-    maxPrice: 850,
+    hourlyRate: 72,
+    email: "liam@kiwicontract.test",
   },
   {
-    id: "kapiti-glass-care",
-    name: "Kapiti Glass Care",
-    service: "Window cleaning",
+    id: "ava-williams",
+    name: "Ava Williams",
+    expertise: "Residential window cleaning",
     position: "Paraparaumu",
-    minPrice: 180,
-    maxPrice: 420,
+    hourlyRate: 38,
+    email: "ava@kiwicontract.test",
   },
 ];
 
@@ -202,7 +215,8 @@ function matchContractors(input: {
 
   return dummyContractorAccounts.filter((contractor) => {
     const priceMatches =
-      requestPrice.max >= contractor.minPrice && requestPrice.min <= contractor.maxPrice;
+      contractor.hourlyRate >= requestPrice.min &&
+      contractor.hourlyRate <= requestPrice.max;
     const locationCloseEnough =
       getLocationScore(input.location, contractor.position) <= 1;
     const serviceMatches = input.task.toLowerCase().includes("window");
@@ -217,9 +231,10 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
 
   return {
     ...request,
+    clientId: request.clientId ?? "client-1",
     matchedContractorIds,
     contractorResponses: matchedContractorIds.reduce<
-      Record<string, "PENDING" | "ACCEPTED" | "REJECTED">
+      Record<string, ContractorResponse>
     >((responses, contractorId) => {
       responses[contractorId] = contractorResponses[contractorId] ?? "PENDING";
       return responses;
@@ -227,9 +242,102 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
   };
 }
 
+const taskRequestStorageKey = "kiwicontract-task-requests";
+const taskRequestChangeEvent = "kiwicontract-task-requests-changed";
+const demoResetChangeEvent = "kiwicontract-demo-reset";
+
+function getTaskRequestSnapshot() {
+  if (typeof window === "undefined") {
+    return "[]";
+  }
+
+  return window.localStorage.getItem(taskRequestStorageKey) ?? "[]";
+}
+
+function subscribeToTaskRequests(onStoreChange: () => void) {
+  window.addEventListener(taskRequestChangeEvent, onStoreChange);
+  window.addEventListener(demoResetChangeEvent, onStoreChange);
+  window.addEventListener("storage", onStoreChange);
+
+  return () => {
+    window.removeEventListener(taskRequestChangeEvent, onStoreChange);
+    window.removeEventListener(demoResetChangeEvent, onStoreChange);
+    window.removeEventListener("storage", onStoreChange);
+  };
+}
+
+function parseTaskRequests(snapshot: string) {
+  try {
+    return (JSON.parse(snapshot) as TaskRequest[]).map(normalizeTaskRequest);
+  } catch {
+    return [];
+  }
+}
+
+type TaskRequestInput = {
+  clientId?: string;
+  task: string;
+  priceRange: string;
+  location: string;
+};
+
+function buildTaskRequest(input: TaskRequestInput, index = 0): TaskRequest {
+  const matchedContractors = matchContractors(input);
+  const contractorResponses = matchedContractors.reduce<
+    Record<string, ContractorResponse>
+  >((responses, contractor) => {
+    responses[contractor.id] = "PENDING";
+    return responses;
+  }, {});
+
+  return {
+    id: `REQ-${Date.now()}-${index}`,
+    clientId: input.clientId ?? "client-1",
+    task: input.task,
+    priceRange: formatPriceRange(input.priceRange),
+    location: input.location,
+    status: "OPEN",
+    createdAt: new Date().toLocaleString(),
+    matchedContractorIds: matchedContractors.map((contractor) => contractor.id),
+    contractorResponses,
+  };
+}
+
+function buildBillForAcceptedRequest(input: {
+  contractor: DummyContractorAccount;
+  request: TaskRequest;
+  hours?: string;
+  notes?: string;
+}): Invoice {
+  const hours = input.hours ?? "2";
+  const hourCount = Number(hours || 0);
+  const subtotal = hourCount * input.contractor.hourlyRate;
+  const gst = subtotal * 0.15;
+  const total = subtotal + gst;
+
+  // Later: insert this bill into Supabase, then create a Fuji wallet payment intent.
+  return {
+    id: `BILL-${Date.now()}-${input.contractor.id}`,
+    clientId: input.request.clientId,
+    contractorId: input.contractor.id,
+    requestId: input.request.id,
+    description: input.request.task,
+    hours,
+    notes:
+      input.notes ??
+      "Auto-generated bill after contractor accepted the request.",
+    subtotal,
+    gst,
+    total,
+    status: "SENT_TO_CLIENT",
+    txHash: "Awaiting Fuji wallet payment",
+    paymentMethod: "FUJI_WALLET_BLUEPRINT",
+  };
+}
+
 type KiwiStateContextValue = {
   contractor: Contractor | null;
-  invoice: Invoice | null;
+  invoices: Invoice[];
   taskRequests: TaskRequest[];
   dummyContractors: DummyContractorAccount[];
   walletConnected: boolean;
@@ -240,14 +348,17 @@ type KiwiStateContextValue = {
   setAttestationUid: (uid: string) => void;
   connectWallet: () => void;
   sendTaskRequest: (input: {
+    clientId?: string;
     task: string;
     priceRange: string;
     location: string;
   }) => void;
+  seedDemoRequests: (clientId?: string) => void;
+  resetLocalDemo: () => void;
   respondToTaskRequest: (
     requestId: string,
     contractorId: string,
-    response: "ACCEPTED" | "REJECTED",
+    response: "ACCEPTED" | "REJECTED" | "ACCEPTED_ELSEWHERE",
   ) => void;
   inviteContractor: (input: {
     name: string;
@@ -257,7 +368,13 @@ type KiwiStateContextValue = {
   }) => void;
   simulateVerification: () => void;
   createInvoice: (hours: string) => void;
-  payInvoice: () => void;
+  sendBillToClient: (input: {
+    requestId: string;
+    contractorId: string;
+    hours: string;
+    notes: string;
+  }) => void;
+  payInvoice: (invoiceId: string) => void;
   sendAgentPrompt: (prompt: string) => void;
 };
 
@@ -337,11 +454,11 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   function storeTaskRequests(nextRequests: TaskRequest[]) {
-    setTaskRequests(nextRequests);
     window.localStorage.setItem(
-      "kiwicontract-task-requests",
+      taskRequestStorageKey,
       JSON.stringify(nextRequests),
     );
+    window.dispatchEvent(new Event(taskRequestChangeEvent));
   }
 
   function connectWallet() {
@@ -349,28 +466,12 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }
 
   function sendTaskRequest(input: {
+    clientId?: string;
     task: string;
     priceRange: string;
     location: string;
   }) {
-    const matchedContractors = matchContractors(input);
-    const contractorResponses = matchedContractors.reduce<
-      Record<string, "PENDING" | "ACCEPTED" | "REJECTED">
-    >((responses, contractor) => {
-      responses[contractor.id] = "PENDING";
-      return responses;
-    }, {});
-
-    const request: TaskRequest = {
-      id: `REQ-${Date.now()}`,
-      task: input.task,
-      priceRange: formatPriceRange(input.priceRange),
-      location: input.location,
-      status: "OPEN",
-      createdAt: new Date().toLocaleString(),
-      matchedContractorIds: matchedContractors.map((contractor) => contractor.id),
-      contractorResponses,
-    };
+    const request = buildTaskRequest(input);
 
     storeTaskRequests([request, ...taskRequests]);
     addAgentMessage(
@@ -381,11 +482,55 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   function respondToTaskRequest(
     requestId: string,
     contractorId: string,
-    response: "ACCEPTED" | "REJECTED",
+    response: "ACCEPTED" | "REJECTED" | "ACCEPTED_ELSEWHERE",
   ) {
     const nextRequests = taskRequests.map((request) => {
       if (request.id !== requestId) {
         return request;
+      }
+
+      if (response === "ACCEPTED") {
+        const acceptedContractor = dummyContractorAccounts.find(
+          (account) => account.id === contractorId,
+        );
+        const contractorResponses = request.matchedContractorIds.reduce<
+          Record<string, ContractorResponse>
+        >((responses, matchedContractorId) => {
+          responses[matchedContractorId] =
+            matchedContractorId === contractorId ? "ACCEPTED" : "ACCEPTED_ELSEWHERE";
+          return responses;
+        }, {});
+
+        if (acceptedContractor) {
+          setContractor({
+            id: acceptedContractor.id,
+            name: acceptedContractor.name,
+            email: acceptedContractor.email,
+            trade: acceptedContractor.expertise,
+            hourlyRate: String(acceptedContractor.hourlyRate),
+            status: "ACTIVE",
+            walletAddress: "0xDemo...contractor",
+            civicPassId: "demo-profile",
+            luminDocument: "Service agreement pending",
+            attestationUid: "",
+          });
+          const bill = buildBillForAcceptedRequest({
+            contractor: acceptedContractor,
+            request,
+          });
+
+          setInvoices((currentBills) => [
+            bill,
+            ...currentBills.filter((currentBill) => currentBill.requestId !== request.id),
+          ]);
+          addAgentMessage(`${acceptedContractor.name} accepted ${request.task}. A bill was automatically sent to the client at $${acceptedContractor.hourlyRate}/hr.`);
+        }
+
+        return {
+          ...request,
+          acceptedContractorId: contractorId,
+          contractorResponses,
+        };
       }
 
       return {
@@ -608,9 +753,22 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       paymentTxHash: txHash,
       txHash: invoice.txHash,
     });
+
+    setInvoices((currentBills) => [
+      bill,
+      ...currentBills.filter((currentBill) => currentBill.requestId !== request.id),
+    ]);
     setContractor({
-      ...contractor,
+      id: billingContractor.id,
+      name: billingContractor.name,
+      email: billingContractor.email,
+      trade: billingContractor.expertise,
+      hourlyRate: String(billingContractor.hourlyRate),
       status: "ACTIVE",
+      walletAddress: "0xDemo...contractor",
+      civicPassId: "demo-profile",
+      luminDocument: "Service agreement pending",
+      attestationUid: "",
     });
     void markLatestInvoicePaid(contractor.id, txHash);
     void updateContractorStatus(contractor.id, "active");
@@ -659,7 +817,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     <KiwiStateContext.Provider
       value={{
         contractor,
-        invoice,
+        invoices,
         taskRequests,
         dummyContractors: dummyContractorAccounts,
         walletConnected: isConnected,
@@ -670,10 +828,13 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
         setAttestationUid,
         connectWallet,
         sendTaskRequest,
+        seedDemoRequests,
+        resetLocalDemo,
         respondToTaskRequest,
         inviteContractor,
         simulateVerification,
         createInvoice,
+        sendBillToClient,
         payInvoice,
         sendAgentPrompt,
       }}
