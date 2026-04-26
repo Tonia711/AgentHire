@@ -1,8 +1,12 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { AIChatLive } from "../../components/AIChatLive";
+import { CivicStub } from "../../components/CivicStub";
 import {
-  AppShell,
+  DummyContractorDashboard,
+  InviteLinkCard,
+  InvoicePanel,
   SendTaskRequestBox,
 } from "../kiwi-components";
 import { useKiwiState } from "../kiwi-state";
@@ -10,8 +14,13 @@ import { useKiwiState } from "../kiwi-state";
 export default function ClientPage() {
   const pathname = usePathname();
   const {
-    connectWallet,
-    invoices,
+    contractor,
+    createInvoice,
+    dummyContractors,
+    invoice,
+    isCreatingInvoice,
+    isPaying,
+    payInvoice,
     sendTaskRequest,
     taskRequests,
     walletConnected,
@@ -36,36 +45,45 @@ export default function ClientPage() {
     >
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-10">
         <section className="space-y-6" aria-label="Business owner workflow">
-          <SendTaskRequestBox
-            onSendRequest={(input) => sendTaskRequest({ ...input, clientId })}
+          <SendTaskRequestBox onSendRequest={sendTaskRequest} />
+          <TaskRequestList contractors={dummyContractors} requests={taskRequests} />
+          <DummyContractorDashboard
+            contractors={dummyContractors}
+            requests={taskRequests}
+          />
+          <AIChatLive />
+          <InvoicePanel
+            invoice={invoice}
+            isCreating={isCreatingInvoice}
+            isPaying={isPaying}
+            onCreateInvoice={createInvoice}
+            onPayInvoice={payInvoice}
           />
         </section>
 
-        <aside className="space-y-6" aria-label="Business snapshot">
+        <aside className="space-y-6" aria-label="Wallet and verification">
+          <WalletPanel connected={walletConnected} />
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-2xl font-bold">Today</h2>
-              <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
-                Snapshot
-              </span>
+              <h2 className="text-2xl font-bold">Civic + Lumin demo controls</h2>
+              <CivicStub
+                verified={Boolean(contractor && contractor.civicPassId !== "pending")}
+              />
             </div>
-            <div className="mt-5 grid gap-3 text-sm">
-              <div className="rounded-md bg-[#fbfcf8] p-3">
-                <p className="font-bold">Active contractors</p>
-                <p className="mt-1 text-[#607066]">{acceptedJobs.length} accepted job{acceptedJobs.length === 1 ? "" : "s"}</p>
-              </div>
-              <div className="rounded-md bg-[#fbfcf8] p-3">
-                <p className="font-bold">Awaiting your action</p>
-                <p className="mt-1 text-[#607066]">{unpaidInvoices.length} bill{unpaidInvoices.length === 1 ? "" : "s"} ready to pay</p>
-              </div>
-              <div className="rounded-md bg-[#fbfcf8] p-3">
-                <p className="font-bold">Recent activity</p>
-                <p className="mt-1 text-[#607066]">
-                  {clientRequests[0] ? `${clientRequests[0].task} posted` : "Post a job to start the activity feed."}
-                </p>
-              </div>
-            </div>
+            <p className="mt-2 text-sm text-[#607066]">
+              For the hackathon demo, this simulates Civic KYC, Lumin Sign, and EAS attestation completion.
+            </p>
+            <button
+              className="mt-5 cursor-pointer rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#0f4536] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={!contractor}
+              onClick={simulateVerification}
+              type="button"
+            >
+              Simulate Sarah verification
+            </button>
           </article>
+          <InviteLinkCard contractor={contractor} />
+          <VaultViewer contractor={contractor} />
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
             <h2 className="text-2xl font-bold">Money</h2>
             <p className="mt-2 text-sm text-[#607066]">

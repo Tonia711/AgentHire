@@ -1,9 +1,20 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import TempNav from "./temp-nav";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { FormEvent, useState } from "react";
+import { useAccount, useChainId, useSwitchChain } from "wagmi";
+import { avalancheFuji } from "wagmi/chains";
+import { shortenHash, txUrl } from "../lib/snowtrace";
+
+const nzdFormatter = new Intl.NumberFormat("en-NZ", {
+  style: "currency",
+  currency: "NZD",
+  currencyDisplay: "symbol",
+});
+
+export function formatNzd(value: number) {
+  return nzdFormatter.format(value);
+}
 import {
   ChatMessage,
   Contractor,
@@ -171,13 +182,12 @@ export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   );
 }
 
-export function WalletPanel({
-  connected,
-  onConnect,
-}: {
-  connected: boolean;
-  onConnect: () => void;
-}) {
+export function WalletPanel({ connected }: { connected: boolean }) {
+  const { isConnected } = useAccount();
+  const chainId = useChainId();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  const wrongChain = isConnected && chainId !== avalancheFuji.id;
+
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-[#17211d] p-5 text-white shadow-sm">
       <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a8cbbf]">
@@ -187,43 +197,35 @@ export function WalletPanel({
         {connected ? "Wallet connected" : "Connect wallet"}
       </h2>
       <p className="mt-2 text-sm text-[#c7d8d2]">
-        Wallet connection will be wired into the real payment flow later.
+        RainbowKit + wagmi connect on Avalanche Fuji (chain 43113).
       </p>
-      <button
-        className="mt-5 rounded-md bg-[#f6c64f] px-4 py-3 text-sm font-bold text-[#17211d] disabled:cursor-not-allowed disabled:opacity-60"
-        data-testid="connect-fuji-wallet-button"
-        disabled={connected}
-        onClick={onConnect}
-        type="button"
-      >
-        {connected ? "Connected" : "Connect wallet"}
-      </button>
-    </article>
-  );
-}
-
-export function ResetDemoPanel({ onReset }: { onReset: () => void }) {
-  const [status, setStatus] = useState("Clear local demo data when you want to test from scratch.");
-
-  function handleReset() {
-    onReset();
-    setStatus("Local requests and contractor responses have been reset.");
-  }
-
-  return (
-    <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
-      <h2 className="text-2xl font-bold">Demo reset</h2>
-      <p className="mt-2 text-sm text-[#607066]" aria-live="polite">
-        {status}
-      </p>
-      <button
-        className="mt-5 rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold text-[#17211d]"
-        data-testid="reset-local-demo-button"
-        onClick={handleReset}
-        type="button"
-      >
-        Reset local demo
-      </button>
+      <div className="mt-5" data-testid="connect-fuji-wallet-button">
+        <ConnectButton
+          accountStatus={{ smallScreen: "avatar", largeScreen: "full" }}
+          chainStatus={{ smallScreen: "icon", largeScreen: "full" }}
+          showBalance={{ smallScreen: false, largeScreen: true }}
+        />
+      </div>
+      {wrongChain && (
+        <div
+          className="mt-4 rounded-md border border-[#f6c64f] bg-[#3a2a06] p-3 text-sm"
+          role="alert"
+        >
+          <p className="font-bold text-[#ffd970]">Wrong network</p>
+          <p className="mt-1 text-[#f1e3b8]">
+            Wallet is on chain {chainId}. Switch to Avalanche Fuji (43113) to invoice and
+            pay in dNZD.
+          </p>
+          <button
+            className="mt-3 cursor-pointer rounded-md bg-[#f6c64f] px-3 py-1.5 text-xs font-bold text-[#17211d] transition-colors duration-200 hover:bg-[#fbd97a] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isSwitching}
+            onClick={() => switchChain({ chainId: avalancheFuji.id })}
+            type="button"
+          >
+            {isSwitching ? "Switching..." : "Switch to Fuji"}
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -496,6 +498,8 @@ export function InviteContractorForm({
   const [email, setEmail] = useState("sarah@email.co.nz");
   const [trade, setTrade] = useState("Electrician");
   const [hourlyRate, setHourlyRate] = useState("80");
+  const [gstRegistered, setGstRegistered] = useState(true);
+  const [ir330cFile, setIr330cFile] = useState<string>("");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -519,8 +523,36 @@ export function InviteContractorForm({
           <input className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" id="contractor-trade" onChange={(event) => setTrade(event.target.value)} required value={trade} />
         </label>
         <label className="grid gap-2 text-sm font-semibold" htmlFor="hourly-rate">
-          Hourly rate NZD
+          Hourly rate (NZD)
           <input className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal" id="hourly-rate" min="1" onChange={(event) => setHourlyRate(event.target.value)} required type="number" value={hourlyRate} />
+        </label>
+        <label className="flex items-start gap-3 rounded-md bg-[#fbfcf8] p-3 text-sm font-semibold" htmlFor="gst-registered">
+          <input
+            checked={gstRegistered}
+            className="mt-1 h-4 w-4 cursor-pointer accent-[#155b49]"
+            id="gst-registered"
+            onChange={(event) => setGstRegistered(event.target.checked)}
+            type="checkbox"
+          />
+          <span className="font-normal">
+            <span className="font-bold">GST registered (15%)</span>
+            <span className="mt-1 block text-xs text-[#607066]">
+              Required if contractor earns over $60,000/year in NZ.
+            </span>
+          </span>
+        </label>
+        <label className="grid gap-2 text-sm font-semibold" htmlFor="ir330c-file">
+          IR330C tax form
+          <input
+            accept=".pdf,.png,.jpg,.jpeg"
+            className="cursor-pointer rounded-md border border-dashed border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 text-xs font-normal"
+            id="ir330c-file"
+            onChange={(event) => setIr330cFile(event.target.files?.[0]?.name ?? "")}
+            type="file"
+          />
+          <span className="text-xs font-normal text-[#607066]">
+            {ir330cFile ? `Captured: ${ir330cFile} (placeholder, not uploaded).` : "Optional. Used for withholding tax calculation."}
+          </span>
         </label>
         <button className="rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white md:w-fit" type="submit">
           Send invite
@@ -581,7 +613,7 @@ export function ContractorList({ contractor }: { contractor: Contractor | null }
             <div>
               <h3 className="text-lg font-bold">{contractor.name}</h3>
               <p className="mt-1 text-sm text-[#607066]">
-                {contractor.trade} | {contractor.email} | ${contractor.hourlyRate}/hr
+                {contractor.trade} | {contractor.email} | {formatNzd(Number(contractor.hourlyRate || 0))}/hr
               </p>
             </div>
             <ContractorStatusBadge status={contractor.status} />
@@ -614,14 +646,79 @@ export function VaultViewer({ contractor }: { contractor: Contractor | null }) {
   );
 }
 
+export function InviteLinkCard({ contractor }: { contractor: Contractor | null }) {
+  const [status, setStatus] = useState("No invite link generated yet.");
+
+  async function copyInviteLink() {
+    if (!contractor?.inviteLink) {
+      setStatus("No invite link available.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(contractor.inviteLink);
+      setStatus("Invite link copied. Share it with the contractor.");
+    } catch {
+      setStatus("Clipboard blocked. Copy the link manually.");
+    }
+  }
+
+  return (
+    <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
+      <h2 className="text-2xl font-bold">Invite link</h2>
+      <p className="mt-2 text-sm text-[#607066]" aria-live="polite">
+        {status}
+      </p>
+      {contractor?.inviteLink ? (
+        <>
+          <p className="mt-3 break-all rounded-md bg-[#fbfcf8] p-3 text-sm">
+            {contractor.inviteLink}
+          </p>
+          <button
+            className="mt-4 rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold"
+            onClick={copyInviteLink}
+            type="button"
+          >
+            Copy invite link
+          </button>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-[#607066]">
+          Ask the AI agent to invite a contractor and the onboarding link will appear here.
+        </p>
+      )}
+    </article>
+  );
+}
+
+function TxLink({ hash }: { hash: string }) {
+  if (!hash || hash.startsWith("0xinvoice...") || hash.startsWith("0xpaid...")) {
+    return <span className="font-mono text-xs text-[#607066]">{hash || "pending"}</span>;
+  }
+  return (
+    <a
+      className="font-mono text-xs text-[#155b49] underline-offset-2 transition-colors duration-200 hover:text-[#0f4536] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49]"
+      href={txUrl(hash)}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {shortenHash(hash)}
+    </a>
+  );
+}
+
 export function InvoicePanel({
   contractors,
   invoices,
   onPayInvoice,
+  isCreating = false,
+  isPaying = false,
 }: {
-  contractors: DummyContractorAccount[];
-  invoices: Invoice[];
-  onPayInvoice: (invoiceId: string) => void;
+  invoice: Invoice | null;
+  onCreateInvoice: (hours: string) => void;
+  onPayInvoice: () => void;
+  isCreating?: boolean;
+  isPaying?: boolean;
 }) {
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
@@ -631,54 +728,61 @@ export function InvoicePanel({
           {invoices.length} bill{invoices.length === 1 ? "" : "s"}
         </span>
       </div>
-      <p className="mt-2 text-sm text-[#607066]">
-        Accepted contractors automatically send bills here. Fuji wallet payment will be wired in later.
-      </p>
-      <div className="mt-5 grid gap-3">
-        {invoices.length === 0 ? (
-          <p className="rounded-md bg-[#fbfcf8] p-3 text-sm text-[#607066]">
-            No bills yet. A bill will appear after a contractor accepts a request.
-          </p>
-        ) : (
-          invoices.map((invoice) => {
-            const billingContractor = contractors.find(
-              (contractor) => contractor.id === invoice.contractorId,
-            );
-
-            return (
-              <article className="rounded-lg border border-[#dde4d8] bg-[#fbfcf8] p-4" key={invoice.id}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold">
-                      {invoice.description ?? "Contractor bill"}
-                    </h3>
-                    <p className="mt-1 text-sm text-[#607066]">
-                      {billingContractor?.name ?? "Contractor"} | {invoice.hours} hours | {invoice.requestId}
-                    </p>
-                  </div>
-                  <InvoiceStatusBadge status={invoice.status} />
-                </div>
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">Subtotal</dt><dd>${invoice.subtotal.toFixed(2)}</dd></div>
-                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">GST 15%</dt><dd>${invoice.gst.toFixed(2)}</dd></div>
-                  <div className="rounded-md bg-white p-3"><dt className="font-semibold">Total dNZD</dt><dd>{invoice.total.toFixed(2)}</dd></div>
-                </dl>
-                {invoice.notes && (
-                  <p className="mt-3 text-sm text-[#607066]">{invoice.notes}</p>
-                )}
-                <button
-                  className="mt-4 rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={invoice.status === "PAID"}
-                  onClick={() => onPayInvoice(invoice.id)}
-                  type="button"
-                >
-                  {invoice.status === "PAID" ? "Paid" : "Pay with Fuji wallet"}
-                </button>
-              </article>
-            );
-          })
-        )}
+      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+        <label className="grid gap-2 text-sm font-semibold" htmlFor="invoice-hours">
+          Hours worked
+          <input
+            className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49]"
+            id="invoice-hours"
+            min="1"
+            onChange={(event) => setHours(event.target.value)}
+            type="number"
+            value={hours}
+          />
+        </label>
+        <button
+          className="cursor-pointer self-end rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold transition-colors duration-200 hover:bg-[#fbfcf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
+          disabled={isCreating}
+          onClick={() => onCreateInvoice(hours)}
+          type="button"
+        >
+          {isCreating ? "Creating..." : "Create invoice"}
+        </button>
       </div>
+      {invoice && (
+        <dl className="mt-5 grid gap-3 text-sm md:grid-cols-2">
+          <div className="rounded-md bg-[#fbfcf8] p-3">
+            <dt className="font-semibold">Subtotal</dt>
+            <dd>{formatNzd(invoice.subtotal)}</dd>
+          </div>
+          <div className="rounded-md bg-[#fbfcf8] p-3">
+            <dt className="font-semibold">GST 15%</dt>
+            <dd>{formatNzd(invoice.gst)}</dd>
+          </div>
+          <div className="rounded-md bg-[#fbfcf8] p-3">
+            <dt className="font-semibold">Total dNZD</dt>
+            <dd>{formatNzd(invoice.total)}</dd>
+          </div>
+          <div className="rounded-md bg-[#fbfcf8] p-3">
+            <dt className="font-semibold">Invoice tx</dt>
+            <dd><TxLink hash={invoice.txHash} /></dd>
+          </div>
+          {invoice.paymentTxHash && (
+            <div className="rounded-md bg-[#e7f2ee] p-3 md:col-span-2">
+              <dt className="font-semibold">Payment tx</dt>
+              <dd><TxLink hash={invoice.paymentTxHash} /></dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <button
+        className="mt-5 cursor-pointer rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#0f4536] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
+        disabled={!invoice || invoice.status === "PAID" || isPaying}
+        onClick={onPayInvoice}
+        type="button"
+      >
+        {isPaying ? "Paying..." : "Pay in dNZD"}
+      </button>
     </article>
   );
 }

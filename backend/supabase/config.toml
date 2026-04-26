@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.log-payment]
 verify_jwt = false
+
+[functions.civic-webhook]
+verify_jwt = false
