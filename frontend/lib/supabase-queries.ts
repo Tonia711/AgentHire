@@ -1,7 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSupabaseBrowserClient } from "./supabase";
 
 const DEMO_BUSINESS_ID = "10000000-0000-0000-0000-000000000001";
+
+async function readJson<T>(response: Response): Promise<T> {
+  const payload = (await response.json()) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Backend request failed");
+  }
+  return payload;
+}
 
 export type SupabaseContractor = {
   id: string;
@@ -14,20 +21,18 @@ export type SupabaseContractor = {
 };
 
 export async function fetchDemoContractor(): Promise<SupabaseContractor | null> {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return null;
-  const { data, error } = await sb
-    .from("contractors")
-    .select("id,name,email,hourly_rate,wallet_address,status,civic_pass_id")
-    .eq("business_id", DEMO_BUSINESS_ID)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    console.warn("Supabase fetchDemoContractor failed:", error.message);
+  try {
+    const payload = await readJson<{ contractors: SupabaseContractor[] }>(
+      await fetch(`/api/contractors?businessId=${DEMO_BUSINESS_ID}`),
+    );
+    return payload.contractors[0] ?? null;
+  } catch (error) {
+    console.warn(
+      "Backend fetchDemoContractor failed:",
+      error instanceof Error ? error.message : "unknown error",
+    );
     return null;
   }
-  return data;
 }
 
 export async function upsertContractor(input: {
@@ -38,18 +43,28 @@ export async function upsertContractor(input: {
   walletAddress: string;
   status: string;
 }) {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return;
-  const { error } = await sb.from("contractors").upsert({
-    id: input.id,
-    business_id: DEMO_BUSINESS_ID,
-    name: input.name,
-    email: input.email,
-    hourly_rate: input.hourlyRate,
-    wallet_address: input.walletAddress,
-    status: input.status,
-  });
-  if (error) console.warn("Supabase upsertContractor failed:", error.message);
+  try {
+    await readJson(
+      await fetch("/api/contractors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: DEMO_BUSINESS_ID,
+          name: input.name,
+          email: input.email,
+          hourlyRate: input.hourlyRate,
+          walletAddress: input.walletAddress,
+          status: input.status,
+          terms: "standard",
+        }),
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      "Backend upsertContractor failed:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  }
 }
 
 export async function updateContractorStatus(
@@ -57,12 +72,20 @@ export async function updateContractorStatus(
   status: string,
   civicPassId?: string,
 ) {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return;
-  const patch: Record<string, unknown> = { status };
-  if (civicPassId) patch.civic_pass_id = civicPassId;
-  const { error } = await sb.from("contractors").update(patch).eq("id", contractorId);
-  if (error) console.warn("Supabase updateContractorStatus failed:", error.message);
+  try {
+    await readJson(
+      await fetch(`/api/contractors/${contractorId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, civicPassId }),
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      "Backend updateContractorStatus failed:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  }
 }
 
 export async function insertInvoice(input: {
@@ -72,37 +95,53 @@ export async function insertInvoice(input: {
   description: string;
   invoiceTxHash?: string;
 }) {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return;
-  const { error } = await sb.from("invoices").insert({
-    business_id: DEMO_BUSINESS_ID,
-    contractor_id: input.contractorId,
-    amount: input.amount,
-    gst_amount: input.gstAmount,
-    description: input.description,
-    invoice_tx_hash: input.invoiceTxHash,
-    status: "created",
-  });
-  if (error) console.warn("Supabase insertInvoice failed:", error.message);
+  try {
+    await readJson(
+      await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: DEMO_BUSINESS_ID,
+          contractorId: input.contractorId,
+          amount: input.amount,
+          gstAmount: input.gstAmount,
+          description: input.description,
+          invoiceTxHash: input.invoiceTxHash,
+        }),
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      "Backend insertInvoice failed:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  }
 }
 
 export async function markLatestInvoicePaid(contractorId: string, txHash: string) {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return;
-  const { data: latest, error: fetchErr } = await sb
-    .from("invoices")
-    .select("id")
-    .eq("contractor_id", contractorId)
-    .eq("status", "created")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (fetchErr || !latest) return;
-  const { error } = await sb
-    .from("invoices")
-    .update({ status: "paid", tx_hash: txHash, paid_at: new Date().toISOString() })
-    .eq("id", latest.id);
-  if (error) console.warn("Supabase markLatestInvoicePaid failed:", error.message);
+  try {
+    const payload = await readJson<{
+      invoices: Array<{ id: string; contractor_id: string; status: string }>;
+    }>(await fetch(`/api/invoices?businessId=${DEMO_BUSINESS_ID}`));
+    const latest = payload.invoices.find(
+      (invoice) => invoice.contractor_id === contractorId && invoice.status === "created",
+    );
+
+    if (!latest) return;
+
+    await readJson(
+      await fetch(`/api/invoices/${latest.id}/paid`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash }),
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      "Backend markLatestInvoicePaid failed:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  }
 }
 
 export async function recordAttestation(input: {
@@ -111,16 +150,7 @@ export async function recordAttestation(input: {
   documentHash: string;
   txHash?: string;
 }) {
-  const sb = getSupabaseBrowserClient();
-  if (!sb) return;
-  const { error } = await sb.from("attestations").insert({
-    contractor_id: input.contractorId,
-    attestation_uid: input.attestationUid,
-    document_hash: input.documentHash,
-    tx_hash: input.txHash,
-    attestation_type: "agreement",
-  });
-  if (error) console.warn("Supabase recordAttestation failed:", error.message);
+  await updateContractorStatus(input.contractorId, "agreement_signed");
 }
 
 // =============================================================================

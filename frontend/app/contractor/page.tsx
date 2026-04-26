@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { CivicStub } from "../../components/CivicStub";
 import { LuminSignButton } from "../../components/LuminSignButton";
-import { ContractorStatusBadge, WalletPanel } from "../kiwi-components";
+import { AppShell, ContractorStatusBadge, WalletPanel } from "../kiwi-components";
 import { useKiwiState } from "../kiwi-state";
 
 export default function ContractorPage() {
   const {
+    connectWallet,
     contractor,
     setAttestationUid,
     simulateVerification,
@@ -59,7 +59,7 @@ export default function ContractorPage() {
               </div>
             </div>
             <ol className="mt-5 grid gap-3 text-sm">
-              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">1. Accept invite from business owner</li>
+              <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">1. Accept request from business owner</li>
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">2. Complete Identity Check</li>
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">3. Sign Agreement</li>
               <li className="rounded-md bg-[#fbfcf8] px-3 py-3 font-semibold">4. Anchor to Trust Vault</li>

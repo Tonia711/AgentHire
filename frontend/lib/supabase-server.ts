@@ -10,12 +10,11 @@ export function getSupabaseServerClient() {
     getEnv("SUPABASE_URL") ?? getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const serviceRoleKey =
     getEnv("SUPABASE_SERVICE_ROLE_KEY") ??
-    getEnv("SERVICE_ROLE_KEY") ??
-    getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    getEnv("SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
+      "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Server API routes need the service role key to access RLS-protected backend tables.",
     );
   }
 
@@ -33,12 +32,11 @@ export async function callEdgeFunction<TBody>(
     getEnv("SUPABASE_URL") ?? getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const serviceRoleKey =
     getEnv("SUPABASE_SERVICE_ROLE_KEY") ??
-    getEnv("SERVICE_ROLE_KEY") ??
-    getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    getEnv("SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
+      "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Server API routes need the service role key to access RLS-protected backend tables.",
     );
   }
 

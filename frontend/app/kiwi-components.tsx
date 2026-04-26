@@ -1,20 +1,13 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { FormEvent, type ReactNode, useState } from "react";
 import { useAccount, useChainId, useSwitchChain } from "wagmi";
 import { avalancheFuji } from "wagmi/chains";
 import { shortenHash, txUrl } from "../lib/snowtrace";
-
-const nzdFormatter = new Intl.NumberFormat("en-NZ", {
-  style: "currency",
-  currency: "NZD",
-  currencyDisplay: "symbol",
-});
-
-export function formatNzd(value: number) {
-  return nzdFormatter.format(value);
-}
+import TempNav from "./temp-nav";
 import {
   ChatMessage,
   Contractor,
@@ -25,6 +18,16 @@ import {
   InvoiceStatus,
   TaskRequest,
 } from "./kiwi-state";
+
+const nzdFormatter = new Intl.NumberFormat("en-NZ", {
+  style: "currency",
+  currency: "NZD",
+  currencyDisplay: "symbol",
+});
+
+export function formatNzd(value: number) {
+  return nzdFormatter.format(value);
+}
 
 function getResponseLabel(response: ContractorResponse) {
   return response === "ACCEPTED_ELSEWHERE" ? "ACCEPTED ELSEWHERE" : response;
@@ -708,76 +711,102 @@ function TxLink({ hash }: { hash: string }) {
 }
 
 export function InvoicePanel({
-  contractors,
+  invoice,
   invoices,
+  onCreateInvoice,
   onPayInvoice,
   isCreating = false,
   isPaying = false,
 }: {
-  invoice: Invoice | null;
-  onCreateInvoice: (hours: string) => void;
+  invoice?: Invoice | null;
+  invoices?: Invoice[];
+  onCreateInvoice?: (hours: string) => void;
   onPayInvoice: () => void;
   isCreating?: boolean;
   isPaying?: boolean;
 }) {
+  const [hours, setHours] = useState("10");
+  const displayedInvoices = invoices ?? (invoice ? [invoice] : []);
+  const activeInvoice =
+    invoice ??
+    displayedInvoices.find((item) => item.status !== "PAID") ??
+    displayedInvoices[0] ??
+    null;
+
   return (
     <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-bold">Bills received</h2>
         <span className="rounded-full bg-[#e7f2ee] px-3 py-1 text-xs font-bold text-[#155b49]">
-          {invoices.length} bill{invoices.length === 1 ? "" : "s"}
+          {displayedInvoices.length} bill{displayedInvoices.length === 1 ? "" : "s"}
         </span>
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="grid gap-2 text-sm font-semibold" htmlFor="invoice-hours">
-          Hours worked
-          <input
-            className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49]"
-            id="invoice-hours"
-            min="1"
-            onChange={(event) => setHours(event.target.value)}
-            type="number"
-            value={hours}
-          />
-        </label>
-        <button
-          className="cursor-pointer self-end rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold transition-colors duration-200 hover:bg-[#fbfcf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
-          disabled={isCreating}
-          onClick={() => onCreateInvoice(hours)}
-          type="button"
-        >
-          {isCreating ? "Creating..." : "Create invoice"}
-        </button>
-      </div>
-      {invoice && (
+      {onCreateInvoice && (
+        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+          <label className="grid gap-2 text-sm font-semibold" htmlFor="invoice-hours">
+            Hours worked
+            <input
+              className="rounded-md border border-[#cfd8ca] bg-[#fbfcf8] px-3 py-3 font-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49]"
+              id="invoice-hours"
+              min="1"
+              onChange={(event) => setHours(event.target.value)}
+              type="number"
+              value={hours}
+            />
+          </label>
+          <button
+            className="cursor-pointer self-end rounded-md border border-[#b9c2b2] px-4 py-3 text-sm font-bold transition-colors duration-200 hover:bg-[#fbfcf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={isCreating}
+            onClick={() => onCreateInvoice(hours)}
+            type="button"
+          >
+            {isCreating ? "Creating..." : "Create invoice"}
+          </button>
+        </div>
+      )}
+      {displayedInvoices.length > 1 && (
+        <div className="mt-5 grid gap-2">
+          {displayedInvoices.map((item) => (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-[#fbfcf8] px-3 py-3 text-sm"
+              key={item.id}
+            >
+              <span className="font-semibold">{item.description ?? item.id}</span>
+              <span>{formatNzd(item.total)}</span>
+              <InvoiceStatusBadge status={item.status} />
+            </div>
+          ))}
+        </div>
+      )}
+      {activeInvoice && (
         <dl className="mt-5 grid gap-3 text-sm md:grid-cols-2">
           <div className="rounded-md bg-[#fbfcf8] p-3">
             <dt className="font-semibold">Subtotal</dt>
-            <dd>{formatNzd(invoice.subtotal)}</dd>
+            <dd>{formatNzd(activeInvoice.subtotal)}</dd>
           </div>
           <div className="rounded-md bg-[#fbfcf8] p-3">
             <dt className="font-semibold">GST 15%</dt>
-            <dd>{formatNzd(invoice.gst)}</dd>
+            <dd>{formatNzd(activeInvoice.gst)}</dd>
           </div>
           <div className="rounded-md bg-[#fbfcf8] p-3">
             <dt className="font-semibold">Total dNZD</dt>
-            <dd>{formatNzd(invoice.total)}</dd>
+            <dd>{formatNzd(activeInvoice.total)}</dd>
           </div>
           <div className="rounded-md bg-[#fbfcf8] p-3">
             <dt className="font-semibold">Invoice tx</dt>
-            <dd><TxLink hash={invoice.txHash} /></dd>
+            <dd><TxLink hash={activeInvoice.txHash} /></dd>
           </div>
-          {invoice.paymentTxHash && (
+          {activeInvoice.paymentTxHash && (
             <div className="rounded-md bg-[#e7f2ee] p-3 md:col-span-2">
               <dt className="font-semibold">Payment tx</dt>
-              <dd><TxLink hash={invoice.paymentTxHash} /></dd>
+              <dd><TxLink hash={activeInvoice.paymentTxHash} /></dd>
             </div>
           )}
         </dl>
       )}
       <button
         className="mt-5 cursor-pointer rounded-md bg-[#155b49] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#0f4536] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#155b49] disabled:cursor-not-allowed disabled:opacity-45"
-        disabled={!invoice || invoice.status === "PAID" || isPaying}
+        disabled={!activeInvoice || activeInvoice.status === "PAID" || isPaying}
         onClick={onPayInvoice}
         type="button"
       >

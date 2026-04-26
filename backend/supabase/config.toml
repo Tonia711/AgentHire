@@ -1,3 +1,6 @@
+[auth.email]
+enable_confirmations = false
+
 [functions.invite-contractor]
 verify_jwt = false
 

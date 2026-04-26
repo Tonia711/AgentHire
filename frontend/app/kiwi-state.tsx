@@ -244,36 +244,24 @@ function normalizeTaskRequest(request: TaskRequest): TaskRequest {
 
 const taskRequestStorageKey = "kiwicontract-task-requests";
 const taskRequestChangeEvent = "kiwicontract-task-requests-changed";
-const demoResetChangeEvent = "kiwicontract-demo-reset";
 
-function getTaskRequestSnapshot() {
+function readStoredTaskRequests() {
   if (typeof window === "undefined") {
-    return "[]";
+    return [];
   }
 
-  return window.localStorage.getItem(taskRequestStorageKey) ?? "[]";
-}
+  const storedRequests = window.localStorage.getItem(taskRequestStorageKey);
 
-function subscribeToTaskRequests(onStoreChange: () => void) {
-  window.addEventListener(taskRequestChangeEvent, onStoreChange);
-  window.addEventListener(demoResetChangeEvent, onStoreChange);
-  window.addEventListener("storage", onStoreChange);
+  if (!storedRequests) {
+    return [];
+  }
 
-  return () => {
-    window.removeEventListener(taskRequestChangeEvent, onStoreChange);
-    window.removeEventListener(demoResetChangeEvent, onStoreChange);
-    window.removeEventListener("storage", onStoreChange);
-  };
-}
-
-function parseTaskRequests(snapshot: string) {
   try {
-    return (JSON.parse(snapshot) as TaskRequest[]).map(normalizeTaskRequest);
+    return (JSON.parse(storedRequests) as TaskRequest[]).map(normalizeTaskRequest);
   } catch {
     return [];
   }
 }
-
 type TaskRequestInput = {
   clientId?: string;
   task: string;
@@ -331,12 +319,12 @@ function buildBillForAcceptedRequest(input: {
     total,
     status: "SENT_TO_CLIENT",
     txHash: "Awaiting Fuji wallet payment",
-    paymentMethod: "FUJI_WALLET_BLUEPRINT",
   };
 }
 
 type KiwiStateContextValue = {
   contractor: Contractor | null;
+  invoice: Invoice | null;
   invoices: Invoice[];
   taskRequests: TaskRequest[];
   dummyContractors: DummyContractorAccount[];
@@ -374,7 +362,7 @@ type KiwiStateContextValue = {
     hours: string;
     notes: string;
   }) => void;
-  payInvoice: (invoiceId: string) => void;
+  payInvoice: () => void;
   sendAgentPrompt: (prompt: string) => void;
 };
 
@@ -384,31 +372,15 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   const demoBusinessId =
     process.env.NEXT_PUBLIC_DEMO_BUSINESS_ID ??
     "10000000-0000-0000-0000-000000000001";
-  const [walletConnected, setWalletConnected] = useState(false);
   const { isConnected, address } = useAccount();
   const { data: walletClient } = useWalletClient();
 
   const [contractor, setContractor] = useState<Contractor | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isPaying, setIsPaying] = useState(false);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
-  const [taskRequests, setTaskRequests] = useState<TaskRequest[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    const storedRequests = window.localStorage.getItem("kiwicontract-task-requests");
-
-    if (!storedRequests) {
-      return [];
-    }
-
-    try {
-      return (JSON.parse(storedRequests) as TaskRequest[]).map(normalizeTaskRequest);
-    } catch {
-      return [];
-    }
-  });
+  const [taskRequests, setTaskRequests] = useState<TaskRequest[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       author: "agent",
@@ -445,6 +417,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
               civicPassId: row.civic_pass_id || "pending",
               luminDocument: "Standard contractor agreement",
               attestationUid: "",
+              inviteLink: "",
             },
       );
     });
@@ -453,7 +426,23 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    function syncStoredTaskRequests() {
+      setTaskRequests(readStoredTaskRequests());
+    }
+
+    syncStoredTaskRequests();
+    window.addEventListener(taskRequestChangeEvent, syncStoredTaskRequests);
+    window.addEventListener("storage", syncStoredTaskRequests);
+
+    return () => {
+      window.removeEventListener(taskRequestChangeEvent, syncStoredTaskRequests);
+      window.removeEventListener("storage", syncStoredTaskRequests);
+    };
+  }, []);
+
   function storeTaskRequests(nextRequests: TaskRequest[]) {
+    setTaskRequests(nextRequests);
     window.localStorage.setItem(
       taskRequestStorageKey,
       JSON.stringify(nextRequests),
@@ -475,7 +464,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
 
     storeTaskRequests([request, ...taskRequests]);
     addAgentMessage(
-      `Request ${request.id} stored locally and sent to ${matchedContractors.length} matching window cleaning contractor(s).`,
+      `Request ${request.id} stored locally and sent to ${request.matchedContractorIds.length} matching window cleaning contractor(s).`,
     );
   }
 
@@ -513,6 +502,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
             civicPassId: "demo-profile",
             luminDocument: "Service agreement pending",
             attestationUid: "",
+            inviteLink: "",
           });
           const bill = buildBillForAcceptedRequest({
             contractor: acceptedContractor,
@@ -681,15 +671,22 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    setInvoice({
+    const newInvoice: Invoice = {
+      id: `INV-${Date.now()}`,
+      clientId: "demo-client",
       contractorId: contractor.id,
       hours,
       subtotal,
       gst,
       total,
-      status: "CREATED_ON_CHAIN",
+      status: "READY_FOR_FUJI_PAYMENT",
       txHash,
-    });
+    };
+    setInvoice(newInvoice);
+    setInvoices((currentInvoices) => [
+      newInvoice,
+      ...currentInvoices.filter((currentInvoice) => currentInvoice.id !== newInvoice.id),
+    ]);
     void insertInvoice({
       contractorId: contractor.id,
       amount: subtotal,
@@ -704,7 +701,10 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
   }
 
   async function payInvoice() {
-    if (!invoice || !contractor) {
+    const targetInvoice =
+      invoice ?? invoices.find((item) => item.status !== "PAID") ?? invoices[0] ?? null;
+
+    if (!targetInvoice || !contractor) {
       return;
     }
 
@@ -734,7 +734,7 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
         const result = await payContractorTx(
           signer,
           contractor.walletAddress,
-          invoice.total,
+          targetInvoice.total,
         );
         txHash = result.txHash;
       }
@@ -748,31 +748,22 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     }
 
     setInvoice({
-      ...invoice,
+      ...targetInvoice,
       status: "PAID",
       paymentTxHash: txHash,
-      txHash: invoice.txHash,
+      txHash: targetInvoice.txHash,
     });
 
-    setInvoices((currentBills) => [
-      bill,
-      ...currentBills.filter((currentBill) => currentBill.requestId !== request.id),
-    ]);
-    setContractor({
-      id: billingContractor.id,
-      name: billingContractor.name,
-      email: billingContractor.email,
-      trade: billingContractor.expertise,
-      hourlyRate: String(billingContractor.hourlyRate),
-      status: "ACTIVE",
-      walletAddress: "0xDemo...contractor",
-      civicPassId: "demo-profile",
-      luminDocument: "Service agreement pending",
-      attestationUid: "",
-    });
+    setInvoices((prev) => prev.map((inv) => inv.id === targetInvoice.id ? {
+      ...inv,
+      status: "PAID",
+      paymentTxHash: txHash,
+      txHash: targetInvoice.txHash,
+    } : inv));
+
     void markLatestInvoicePaid(contractor.id, txHash);
     void updateContractorStatus(contractor.id, "active");
-    addAgentMessage(`Sent ${invoice.total.toFixed(2)} dNZD to ${contractor.name}.`);
+    addAgentMessage(`Sent ${targetInvoice.total.toFixed(2)} dNZD to ${contractor.name}.`);
     setIsPaying(false);
   }
 
@@ -813,10 +804,80 @@ export function KiwiStateProvider({ children }: { children: ReactNode }) {
     addAgentMessage(`EAS attestation anchored on Fuji: ${uid.slice(0, 10)}...`);
   }
 
+  function seedDemoRequests(clientId?: string) {
+    const seededRequests = [
+      buildTaskRequest(
+        {
+          clientId: clientId ?? "client-1",
+          task: "Window cleaning for a small office frontage",
+          priceRange: "$40-$80",
+          location: "Wellington CBD",
+        },
+        0,
+      ),
+      buildTaskRequest(
+        {
+          clientId: clientId ?? "client-1",
+          task: "Exterior glass clean for shopfront",
+          priceRange: "$60-$90",
+          location: "Petone",
+        },
+        1,
+      ),
+    ];
+
+    storeTaskRequests(seededRequests);
+    addAgentMessage("Demo requests seeded.");
+  }
+
+  function resetLocalDemo() {
+    setContractor(null);
+    setInvoice(null);
+    setInvoices([]);
+    storeTaskRequests([]);
+    setChatMessages([
+      {
+        author: "agent",
+        text: "Kia ora. Send a task request, connect a Fuji wallet, or ask me to create an invoice.",
+      },
+    ]);
+  }
+
+  function sendBillToClient(input: {
+    requestId: string;
+    contractorId: string;
+    hours: string;
+    notes: string;
+  }) {
+    const request = taskRequests.find((item) => item.id === input.requestId);
+    const contractorAccount = dummyContractorAccounts.find(
+      (item) => item.id === input.contractorId,
+    );
+
+    if (!request || !contractorAccount) {
+      addAgentMessage("Could not find the request or contractor for that bill.");
+      return;
+    }
+
+    const bill = buildBillForAcceptedRequest({
+      contractor: contractorAccount,
+      request,
+      hours: input.hours,
+      notes: input.notes,
+    });
+
+    setInvoices((currentInvoices) => [
+      bill,
+      ...currentInvoices.filter((currentInvoice) => currentInvoice.id !== bill.id),
+    ]);
+    addAgentMessage(`Bill sent to ${request.clientId}: ${bill.description ?? bill.id}.`);
+  }
+
   return (
     <KiwiStateContext.Provider
       value={{
         contractor,
+        invoice,
         invoices,
         taskRequests,
         dummyContractors: dummyContractorAccounts,

@@ -1,27 +1,34 @@
 "use client";
 
-import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { AIChatLive } from "../../components/AIChatLive";
 import { CivicStub } from "../../components/CivicStub";
 import {
+  AppShell,
   DummyContractorDashboard,
   InviteLinkCard,
   InvoicePanel,
   SendTaskRequestBox,
+  TaskRequestList,
+  VaultViewer,
+  WalletPanel,
 } from "../kiwi-components";
 import { useKiwiState } from "../kiwi-state";
 
 export default function ClientPage() {
   const pathname = usePathname();
   const {
+    connectWallet,
     contractor,
     createInvoice,
     dummyContractors,
     invoice,
+    invoices,
     isCreatingInvoice,
     isPaying,
     payInvoice,
     sendTaskRequest,
+    simulateVerification,
     taskRequests,
     walletConnected,
   } = useKiwiState();
@@ -29,7 +36,6 @@ export default function ClientPage() {
   const clientName = clientId === "client-2" ? "Client 2" : "Client 1";
   const clientRequests = taskRequests.filter((request) => request.clientId === clientId);
   const clientInvoices = invoices.filter((invoice) => invoice.clientId === clientId);
-  const acceptedJobs = clientRequests.filter((request) => request.acceptedContractorId);
   const unpaidInvoices = clientInvoices.filter((invoice) => invoice.status !== "PAID");
   const moneyPath = clientId === "client-2" ? "/business2/money" : "/business/money";
 
@@ -46,10 +52,10 @@ export default function ClientPage() {
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-10">
         <section className="space-y-6" aria-label="Business owner workflow">
           <SendTaskRequestBox onSendRequest={sendTaskRequest} />
-          <TaskRequestList contractors={dummyContractors} requests={taskRequests} />
+          <TaskRequestList contractors={dummyContractors} requests={clientRequests} />
           <DummyContractorDashboard
             contractors={dummyContractors}
-            requests={taskRequests}
+            requests={clientRequests}
           />
           <AIChatLive />
           <InvoicePanel

@@ -1,7 +1,7 @@
 "use client";
 
 import { AppShell, InvoicePanel } from "../../kiwi-components";
-import { dummyContractorAccounts, useKiwiState } from "../../kiwi-state";
+import { useKiwiState } from "../../kiwi-state";
 
 export default function ContractorWorkPage() {
   const {
@@ -40,7 +40,6 @@ export default function ContractorWorkPage() {
           </article>
         </section>
         <InvoicePanel
-          contractors={dummyContractorAccounts}
           invoices={invoices}
           onPayInvoice={payInvoice}
         />

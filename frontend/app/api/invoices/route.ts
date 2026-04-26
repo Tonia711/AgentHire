@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       gstAmount = 0,
       description,
       onchainId,
+      invoiceTxHash,
       tokenSymbol = "dNZD",
       chainId = 43113,
     } = body;
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
         gst_amount: gstAmount,
         description,
         onchain_id: onchainId,
+        invoice_tx_hash: invoiceTxHash,
         token_symbol: tokenSymbol,
         chain_id: chainId,
         status: "created",

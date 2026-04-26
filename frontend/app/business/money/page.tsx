@@ -14,7 +14,6 @@ export default function BusinessMoneyPage() {
   const {
     connectWallet,
     contractor,
-    dummyContractors,
     invoices,
     payInvoice,
     simulateVerification,
@@ -37,14 +36,13 @@ export default function BusinessMoneyPage() {
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
         <section className="space-y-6" aria-label="Bills and payments">
           <InvoicePanel
-            contractors={dummyContractors}
             invoices={clientInvoices}
             onPayInvoice={payInvoice}
           />
         </section>
 
         <aside className="space-y-6" aria-label="Wallet and trust records">
-          <WalletPanel connected={walletConnected} onConnect={connectWallet} />
+          <WalletPanel connected={walletConnected} />
           <article className="rounded-lg border border-[#d9ded2] bg-white p-5 shadow-sm">
             <h2 className="text-2xl font-bold">Trust setup demo</h2>
             <p className="mt-2 text-sm text-[#607066]">

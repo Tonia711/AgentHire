@@ -10,10 +10,10 @@ AI-powered Web3 service marketplace where agents help users discover, evaluate, 
 npm install
 ```
 
-2. Set the Supabase environment variables for the frontend:
+2. Set the Supabase environment variables for the frontend. The browser uses the public anon key; the Next.js API routes also need `SUPABASE_SERVICE_ROLE_KEY` to talk to RLS-protected backend tables:
 
 ```bash
-cp frontend/.env.local.example frontend/.env.local
+cp frontend/.env.example frontend/.env.local
 ```
 
 3. Apply the migration in `backend/supabase/migrations/0001_init.sql` to your Supabase project (this creates the KiwiContract hackathon schema and demo seed data).
